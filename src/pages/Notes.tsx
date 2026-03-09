@@ -1,12 +1,16 @@
 import { useState } from 'react';
 import { useApp } from '../context/AppContext';
+import { useTableData } from '../hooks/useData';
+import { Note } from '../types';
 import { Plus, Search, Pin, Trash2, X, Edit2 } from 'lucide-react';
 import { format } from 'date-fns';
 
 const noteColors = ['#fef3c7', '#dcfce7', '#dbeafe', '#fce7f3', '#f3e8ff', '#fef9c3', '#e0f2fe', '#ffe4e6'];
 
 export function Notes() {
-  const { notes, addNote, updateNote, deleteNote, togglePinNote } = useApp();
+  const { user } = useApp();
+  const { data: notes, isLoading, addRecord, updateRecord, deleteRecord } = useTableData<Note>('notes');
+  
   const [showModal, setShowModal] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
   const [search, setSearch] = useState('');
@@ -21,21 +25,29 @@ export function Notes() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    const now = new Date().toISOString();
     if (editId) {
-      updateNote(editId, form);
+      updateRecord({ id: editId, data: { ...form, updatedAt: now } });
     } else {
-      addNote(form);
+      addRecord({ ...form, userId: user?.id, createdAt: now, updatedAt: now });
     }
     setForm({ title: '', content: '', color: noteColors[0], pinned: false });
     setEditId(null);
     setShowModal(false);
   };
 
-  const handleEdit = (note: typeof notes[0]) => {
+  const handleEdit = (note: Note) => {
     setForm({ title: note.title, content: note.content, color: note.color, pinned: note.pinned });
     setEditId(note.id);
     setShowModal(true);
   };
+
+  const togglePinNote = (id: string) => {
+    const note = notes.find(n => n.id === id);
+    if (note) updateRecord({ id, data: { pinned: !note.pinned, updatedAt: new Date().toISOString() } });
+  };
+
+  if (isLoading) return <div className="p-6 flex justify-center"><div className="w-8 h-8 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin"></div></div>;
 
   return (
     <div className="p-6 space-y-6">
@@ -62,15 +74,9 @@ export function Notes() {
             <div className="flex items-start justify-between mb-2">
               <h3 className="font-semibold text-gray-900 dark:text-white flex-1 truncate">{note.title}</h3>
               <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                <button onClick={() => togglePinNote(note.id)} className={`p-1 rounded ${note.pinned ? 'text-indigo-600' : 'text-gray-400 hover:text-gray-600'}`}>
-                  <Pin className="w-4 h-4" />
-                </button>
-                <button onClick={() => handleEdit(note)} className="p-1 rounded text-gray-400 hover:text-gray-600">
-                  <Edit2 className="w-4 h-4" />
-                </button>
-                <button onClick={() => deleteNote(note.id)} className="p-1 rounded text-gray-400 hover:text-red-500">
-                  <Trash2 className="w-4 h-4" />
-                </button>
+                <button onClick={() => togglePinNote(note.id)} className={`p-1 rounded ${note.pinned ? 'text-indigo-600' : 'text-gray-400 hover:text-gray-600'}`}><Pin className="w-4 h-4" /></button>
+                <button onClick={() => handleEdit(note)} className="p-1 rounded text-gray-400 hover:text-gray-600"><Edit2 className="w-4 h-4" /></button>
+                <button onClick={() => deleteRecord(note.id)} className="p-1 rounded text-gray-400 hover:text-red-500"><Trash2 className="w-4 h-4" /></button>
               </div>
             </div>
             {note.pinned && <span className="text-xs mb-2 block">📌 Đã ghim</span>}
@@ -85,37 +91,19 @@ export function Notes() {
           <div className="bg-white dark:bg-gray-800 rounded-xl w-full max-w-lg animate-fadeIn">
             <div className="p-4 border-b dark:border-gray-700 flex justify-between items-center">
               <h2 className="text-lg font-semibold text-gray-900 dark:text-white">{editId ? 'Chỉnh sửa' : 'Ghi chú mới'}</h2>
-              <button onClick={() => setShowModal(false)}><X className="w-5 h-5" /></button>
+              <button onClick={() => setShowModal(false)}><X className="w-5 h-5 text-gray-500" /></button>
             </div>
             <form onSubmit={handleSubmit} className="p-4 space-y-4">
-              <div>
-                <label className="block text-sm font-medium mb-1">Tiêu đề *</label>
-                <input type="text" value={form.title} onChange={e => setForm({ ...form, title: e.target.value })}
-                  className="w-full px-3 py-2 border dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white" required />
+              <input type="text" placeholder="Tiêu đề *" required value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} className="w-full px-3 py-2 border dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white" />
+              <textarea placeholder="Nội dung" value={form.content} onChange={e => setForm({ ...form, content: e.target.value })} className="w-full px-3 py-2 border dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white resize-none" rows={8} />
+              <div className="flex gap-2 flex-wrap">
+                {noteColors.map(c => <button key={c} type="button" onClick={() => setForm({ ...form, color: c })} className={`w-8 h-8 rounded-lg transition-all ${form.color === c ? 'ring-2 ring-offset-2 ring-gray-400 scale-110' : ''}`} style={{ backgroundColor: c }} />)}
               </div>
-              <div>
-                <label className="block text-sm font-medium mb-1">Nội dung</label>
-                <textarea value={form.content} onChange={e => setForm({ ...form, content: e.target.value })}
-                  className="w-full px-3 py-2 border dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white resize-none" rows={8} />
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-1">Màu nền</label>
-                <div className="flex gap-2 flex-wrap">
-                  {noteColors.map(c => (
-                    <button key={c} type="button" onClick={() => setForm({ ...form, color: c })}
-                      className={`w-8 h-8 rounded-lg transition-all ${form.color === c ? 'ring-2 ring-offset-2 ring-gray-400 scale-110' : ''}`}
-                      style={{ backgroundColor: c }} />
-                  ))}
-                </div>
-              </div>
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input type="checkbox" checked={form.pinned} onChange={e => setForm({ ...form, pinned: e.target.checked })}
-                  className="w-4 h-4 rounded text-indigo-600" />
-                <span className="text-sm">📌 Ghim lên đầu</span>
+              <label className="flex items-center gap-2 cursor-pointer dark:text-white">
+                <input type="checkbox" checked={form.pinned} onChange={e => setForm({ ...form, pinned: e.target.checked })} className="w-4 h-4 rounded text-indigo-600" />
+                📌 Ghim lên đầu
               </label>
-              <button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-2 rounded-lg font-medium">
-                {editId ? 'Cập nhật' : 'Tạo ghi chú'}
-              </button>
+              <button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-2 rounded-lg font-medium">{editId ? 'Cập nhật' : 'Tạo ghi chú'}</button>
             </form>
           </div>
         </div>
