@@ -163,7 +163,6 @@ export async function fetchUserData<T>(
 
   return mappedData as T[];
 }
-
 // Generic insert function
 export async function insertData(tableName: string, data: any) {
   const dbData = { ...data };
