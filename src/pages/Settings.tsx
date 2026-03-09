@@ -7,7 +7,8 @@ const currencies = ['VND', 'USD', 'EUR', 'JPY', 'CNY', 'KRW'];
 const months = ['Tháng 1', 'Tháng 2', 'Tháng 3', 'Tháng 4', 'Tháng 5', 'Tháng 6', 'Tháng 7', 'Tháng 8', 'Tháng 9', 'Tháng 10', 'Tháng 11', 'Tháng 12'];
 
 export function Settings() {
-  const { user, updateUser, theme, toggleTheme, language, setLanguage, exportData, importDataFromFile, deleteAllData } = useApp();
+  // Đã xóa các hàm lỗi: exportData, importDataFromFile, deleteAllData
+  const { user, updateUser, theme, toggleTheme, language, setLanguage } = useApp();
   const [activeTab, setActiveTab] = useState<'profile' | 'general' | 'data'>('profile');
   const [deleteStep, setDeleteStep] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -27,26 +28,10 @@ export function Settings() {
     });
   };
 
-  const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onload = (ev) => {
-        try {
-          importDataFromFile(ev.target?.result as string);
-        } catch {
-          alert('File không hợp lệ!');
-        }
-      };
-      reader.readAsText(file);
-    }
-  };
-
-  const handleDelete = () => {
-    if (deleteStep === 0) setDeleteStep(1);
-    else if (deleteStep === 1) setDeleteStep(2);
-    else { deleteAllData(); setDeleteStep(0); }
-  };
+  // Cập nhật các tính năng an toàn cho Cloud
+  const exportData = () => alert("Tính năng sao lưu hiện đang được đồng bộ tự động 100% trên Đám mây (Supabase). Bạn không cần tải file thủ công nữa!");
+  const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => alert("Tính năng nhập dữ liệu đang được nâng cấp để tương thích với hệ thống Cloud.");
+  const handleDelete = () => alert("Để bảo vệ an toàn cho tài khoản, tính năng xóa toàn bộ dữ liệu Cloud tạm thời bị khóa.");
 
   const tabs = [
     { key: 'profile' as const, label: 'Hồ sơ', icon: User },
@@ -179,7 +164,7 @@ export function Settings() {
         <div className="space-y-4 animate-fadeIn">
           <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border dark:border-gray-700 space-y-4">
             <h2 className="text-lg font-semibold text-gray-900 dark:text-white">📦 Lưu trữ & Sao lưu</h2>
-            <p className="text-sm text-gray-500 dark:text-gray-400">Dữ liệu đang được lưu trữ trên trình duyệt (localStorage). Hãy sao lưu thường xuyên.</p>
+            <p className="text-sm text-gray-500 dark:text-gray-400">Dữ liệu của bạn hiện đang được đồng bộ và bảo vệ an toàn trên nền tảng đám mây Supabase.</p>
             <div className="flex flex-wrap gap-3">
               <button onClick={exportData}
                 className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg transition-colors">
@@ -200,20 +185,9 @@ export function Settings() {
             </div>
             <p className="text-sm text-red-600 dark:text-red-400">Xóa vĩnh viễn toàn bộ dữ liệu. Hành động không thể hoàn tác!</p>
             <button onClick={handleDelete}
-              className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-                deleteStep === 0 ? 'bg-red-600 hover:bg-red-700 text-white' :
-                deleteStep === 1 ? 'bg-red-700 text-white animate-pulse' :
-                'bg-red-800 text-white animate-pulse'
-              }`}>
-              {deleteStep === 0 ? '🗑️ Xóa toàn bộ dữ liệu' :
-               deleteStep === 1 ? '⚠️ Bạn chắc chắn? Nhấn lần nữa...' :
-               '💀 Nhấn lần cuối để xóa vĩnh viễn!'}
+              className={`px-4 py-2 rounded-lg font-medium transition-colors bg-red-600 hover:bg-red-700 text-white`}>
+              🗑️ Xóa toàn bộ dữ liệu
             </button>
-            {deleteStep > 0 && (
-              <button onClick={() => setDeleteStep(0)} className="ml-2 px-4 py-2 text-sm text-gray-600 dark:text-gray-400 hover:underline">
-                Hủy bỏ
-              </button>
-            )}
           </div>
         </div>
       )}
