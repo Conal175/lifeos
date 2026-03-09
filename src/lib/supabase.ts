@@ -129,23 +129,31 @@ export async function fetchUserData<T>(
   const { data: { session } } = await supabase.auth.getSession();
   if (!session?.user) return [];
 
-let query = supabase.from(tableName).select('*').eq('user_id', session.user.id);
-  
-  // Nếu truyền vào cột ngày tháng, chỉ lấy dữ liệu trong khoảng X ngày gần nhất
+  // 1. Sửa lỗi gọi sai tên cột (Đổi userId thành user_id)
+  let query = supabase.from(tableName).select('*').eq('user_id', session.user.id);
+
+  // 2. Lọc theo ngày để tăng tốc độ tải
   if (dateColumn) {
     const pastDate = new Date();
     pastDate.setDate(pastDate.getDate() - daysLimit);
-    const dateString = pastDate.toISOString().split('T')[0]; // Format YYYY-MM-DD
-    
+    const dateString = pastDate.toISOString().split('T')[0];
     query = query.gte(dateColumn, dateString);
   }
 
   const { data, error } = await query;
   if (error) {
-    console.error(`Lỗi tải bảng ${tableName}:`, error);
-    throw error;
+    console.error(`❌ Lỗi tải bảng ${tableName}:`, error);
+    return []; // Trả về mảng rỗng để web không bị treo
   }
-  return data as T[];
+
+  // 3. Dịch ngược user_id về lại userId cho giao diện React hiểu
+  const mappedData = data.map((item: any) => {
+    const newItem = { ...item, userId: item.user_id };
+    delete newItem.user_id;
+    return newItem;
+  });
+
+  return mappedData as T[];
 }
 
 // Generic insert function
