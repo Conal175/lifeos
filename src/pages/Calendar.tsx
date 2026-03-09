@@ -61,11 +61,13 @@ export function CalendarPage() {
     else setCurrentDate(dir > 0 ? addDays(currentDate, 1) : subDays(currentDate, 1));
   };
 
+  // ĐÃ FIX: Khai báo rõ ràng biến weekStart
+  const weekStart = startOfWeek(currentDate, { weekStartsOn: 1 });
   const calendarDays = eachDayOfInterval({ start: startOfWeek(startOfMonth(currentDate), { weekStartsOn: 1 }), end: endOfWeek(endOfMonth(currentDate), { weekStartsOn: 1 }) });
-  const weekDays = eachDayOfInterval({ start: startOfWeek(currentDate, { weekStartsOn: 1 }), end: addDays(startOfWeek(currentDate, { weekStartsOn: 1 }), 6) });
+  const weekDays = eachDayOfInterval({ start: weekStart, end: addDays(weekStart, 6) });
   const hours = Array.from({ length: 24 }, (_, i) => i);
 
-  // ĐÃ NÂNG CẤP: Quét và hiển thị cả Task mẹ lẫn Subtask lên lịch
+  // Quét và hiển thị cả Task mẹ lẫn Subtask lên lịch
   const taskEvents = useMemo(() => {
     const formatted: any[] = [];
     tasks.forEach(t => {
