@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
-import { useTableData } from '../hooks/useData'; // <-- IMPORT CỖ MÁY DATA
+import { useTableData } from '../hooks/useData';
 import { Transaction, Task, SavingsGoal, Event, Debt, Investment, Budget } from '../types';
 import { Wallet, ArrowUpRight, ArrowDownRight, Target, CheckCircle, TrendingUp, AlertTriangle, Calendar as CalendarIcon } from 'lucide-react';
 import { PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar } from 'recharts';
@@ -12,40 +12,38 @@ const avatars = ['👤', '👨', '👩', '🧑', '👨‍💼', '👩‍💼'];
 const categoryColors = ['#6366f1', '#8b5cf6', '#ec4899', '#f43f5e', '#f97316', '#eab308'];
 
 export function Dashboard() {
-  const { user, theme } = useApp(); // Chỉ lấy thông tin người dùng từ AppContext
+  const { user, theme } = useApp(); 
   
-  // DÙNG REACT QUERY ĐỂ TỰ ĐỘNG TẢI DỮ LIỆU TẠI CHỖ
-  const { data: transactions, isLoading: loadingTx } = useTableData<Transaction>('transactions', 'date', 60);
-  const { data: tasks, isLoading: loadingTasks } = useTableData<Task>('tasks');
-  const { data: savingsGoals } = useTableData<SavingsGoal>('savings_goals');
-  const { data: events } = useTableData<Event>('events');
-  const { data: debts } = useTableData<Debt>('debts');
-  const { data: investments } = useTableData<Investment>('investments');
-  const { data: budgets } = useTableData<Budget>('budgets');
+  // ĐÃ FIX LỖI: Thêm = [] để chống lỗi undefined khi dữ liệu chưa load kịp
+  const { data: transactions = [], isLoading: loadingTx } = useTableData<Transaction>('transactions', 'date', 60);
+  const { data: tasks = [], isLoading: loadingTasks } = useTableData<Task>('tasks');
+  const { data: savingsGoals = [] } = useTableData<SavingsGoal>('savings_goals');
+  const { data: events = [] } = useTableData<Event>('events');
+  const { data: debts = [] } = useTableData<Debt>('debts');
+  const { data: investments = [] } = useTableData<Investment>('investments');
+  const { data: budgets = [] } = useTableData<Budget>('budgets');
 
   const [todayTasks, setTodayTasks] = useState(0);
   const [completedToday, setCompletedToday] = useState(0);
 
   useEffect(() => {
     const today = getLocalDateString();
+    // Bây giờ tasks luôn là mảng, không bao giờ bị crash nữa
     const todayTasksCount = tasks.filter(t => t.dueDate && t.dueDate.split('T')[0] === today).length;
     const completedTodayCount = tasks.filter(t => t.completedAt && t.completedAt.split('T')[0] === today).length;
     setTodayTasks(todayTasksCount);
     setCompletedToday(completedTodayCount);
   }, [tasks]);
 
-  // Nếu dữ liệu chính đang tải, hiển thị bộ khung chờ (Skeleton) hoặc Loading xoay
   if (loadingTx || loadingTasks) {
     return <div className="p-6 flex justify-center items-center h-64"><div className="w-8 h-8 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin"></div></div>;
   }
 
-  // Calculate totals
   const totalIncome = transactions.filter(t => t.type === 'income').reduce((sum, t) => sum + (t.amount || 0), 0);
   const totalExpense = transactions.filter(t => t.type === 'expense').reduce((sum, t) => sum + (t.amount || 0), 0);
   const balance = totalIncome - totalExpense;
   const savingsRate = totalIncome > 0 ? ((totalIncome - totalExpense) / totalIncome) * 100 : 0;
 
-  // Task progress
   const totalTasks = tasks.length;
   const completedTasks = tasks.filter(t => t.completed).length;
   const taskProgress = totalTasks > 0 ? (completedTasks / totalTasks) * 100 : 0;
@@ -73,7 +71,6 @@ export function Dashboard() {
 
   return (
     <div className="p-6 space-y-6">
-      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Chào {user?.name || 'Bạn'}! 👋</h1>
@@ -86,7 +83,6 @@ export function Dashboard() {
         </div>
       </div>
 
-      {/* Today's Progress */}
       <div className="bg-gradient-to-r from-indigo-500 to-purple-600 rounded-xl p-6 text-white">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-semibold">Tiến độ hôm nay</h2>
@@ -100,7 +96,6 @@ export function Dashboard() {
         </div>
       </div>
 
-      {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border dark:border-gray-700">
           <div className="flex items-center justify-between mb-2"><Wallet className="w-5 h-5 text-indigo-600 dark:text-indigo-400" /><span className="text-sm text-gray-500 dark:text-gray-400">Số dư</span></div>
@@ -120,7 +115,6 @@ export function Dashboard() {
         </div>
       </div>
 
-      {/* Warnings */}
       {(overdueTasks.length > 0 || debts.some(d => !d.completed && d.dueDate && new Date(d.dueDate) < new Date()) || budgets.some(b => b.limit > 0 && (b.spent / b.limit) >= 0.8)) && (
         <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl p-4">
           <div className="flex items-center gap-2 text-red-600 dark:text-red-400 mb-2"><AlertTriangle className="w-5 h-5" /><h3 className="font-semibold">Cảnh báo</h3></div>
@@ -130,7 +124,6 @@ export function Dashboard() {
         </div>
       )}
 
-      {/* Charts Row */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border dark:border-gray-700">
           <h3 className="font-semibold mb-4 text-gray-900 dark:text-white">Luồng tiền (7 ngày)</h3>
@@ -158,7 +151,6 @@ export function Dashboard() {
         </div>
       </div>
 
-      {/* Recent Transactions & Today's Events */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border dark:border-gray-700">
           <h3 className="font-semibold mb-4 text-gray-900 dark:text-white">Giao dịch gần đây</h3>
@@ -203,7 +195,6 @@ export function Dashboard() {
         </div>
       </div>
 
-      {/* Progress Section */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border dark:border-gray-700">
           <div className="flex items-center gap-2 mb-3"><CheckCircle className="w-5 h-5 text-indigo-600 dark:text-indigo-400" /><h3 className="font-semibold text-gray-900 dark:text-white">Tiến độ Task</h3></div>
