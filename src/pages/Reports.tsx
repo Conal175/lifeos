@@ -33,17 +33,14 @@ export function Reports() {
     if (period === 'year') {
       return Array.from({ length: 12 }, (_, i) => {
         const m = subMonths(now, 11 - i);
-        const mStart = startOfMonth(m);
-        const mEnd = endOfMonth(m);
-        const monthTx = transactions.filter(t => new Date(t.date) >= mStart && new Date(t.date) <= mEnd);
+        const monthTx = transactions.filter(t => new Date(t.date) >= startOfMonth(m) && new Date(t.date) <= endOfMonth(m));
         return { label: format(m, 'MM/yy'), income: monthTx.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0), expense: monthTx.filter(t => t.type === 'expense').reduce((s, t) => s + t.amount, 0) };
       });
     }
     const days = period === 'week' ? 7 : 30;
     return Array.from({ length: days }, (_, i) => {
       const d = new Date(now); d.setDate(d.getDate() - (days - 1 - i));
-      const ds = format(d, 'yyyy-MM-dd');
-      const dayTx = transactions.filter(t => t.date.startsWith(ds));
+      const dayTx = transactions.filter(t => t.date.startsWith(format(d, 'yyyy-MM-dd')));
       return { label: format(d, 'dd/MM'), income: dayTx.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0), expense: dayTx.filter(t => t.type === 'expense').reduce((s, t) => s + t.amount, 0) };
     });
   }, [transactions, period]);
@@ -62,7 +59,7 @@ export function Reports() {
         <h1 className="text-2xl font-bold text-gray-900 dark:text-white">📊 Báo cáo & Thống kê</h1>
         <div className="flex border dark:border-gray-600 rounded-lg overflow-hidden">
           {(['week', 'month', 'year'] as const).map(p => (
-            <button key={p} onClick={() => setPeriod(p)} className={`px-4 py-2 text-sm transition-colors ${period === p ? 'bg-indigo-600 text-white' : 'bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700'}`}>
+            <button key={p} onClick={() => setPeriod(p)} className={`px-4 py-2 text-sm transition-colors ${period === p ? 'bg-indigo-600 text-white' : 'bg-white dark:bg-gray-800 hover:bg-gray-50'}`}>
               {p === 'week' ? 'Tuần' : p === 'month' ? 'Tháng' : 'Năm'}
             </button>
           ))}
