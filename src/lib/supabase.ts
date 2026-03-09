@@ -15,6 +15,7 @@ export const supabase: SupabaseClient = createClient(
 
 export type { Session, SupabaseUser };
 
+// --- AUTH FUNCTIONS ---
 export const signUp = async (email: string, password: string, fullName: string) => {
   if (!isSupabaseConfigured()) throw new Error('SUPABASE_NOT_CONFIGURED');
   const { data, error } = await supabase.auth.signUp({ email, password, options: { data: { full_name: fullName } } });
@@ -99,8 +100,7 @@ function toDbFormat(tableName: string, data: any) {
     if (dbData.isTask !== undefined) delete dbData.isTask;
   }
 
-  // Chống lỗi array rỗng bị ép thành null trên Supabase
-  if (tableName === 'tasks' && !dbData.subtasks) dbData.subtasks = [];
+  // ĐÃ XÓA DÒNG CODE GÂY LỖI GHI ĐÈ SUBTASKS THÀNH MẢNG RỖNG TẠI ĐÂY
 
   return dbData;
 }
@@ -139,7 +139,7 @@ function fromDbFormat(tableName: string, dbData: any) {
     obj.endDate = obj.end_time ? `${obj.date}T${obj.end_time}` : obj.date;
   }
 
-  // --- VÁ LỖI CỐT LÕI: ÉP TẤT CẢ DECIMAL SANG SỐ ---
+  // ÉP KIỂU SỐ CHỐNG LỖI CỘNG TIỀN QUỸ TIẾT KIỆM
   const numberFields = ['amount', 'limit', 'spent', 'quantity', 'avgPrice', 'currentPrice', 'target', 'current', 'estimatedHours', 'weight', 'sleepHours', 'targetPerDay'];
   for (const field of numberFields) {
     if (obj[field] !== undefined && obj[field] !== null) {
@@ -147,7 +147,7 @@ function fromDbFormat(tableName: string, dbData: any) {
     }
   }
 
-  // --- BỌC THÉP MẢNG: CHỐNG LỖI SUBTASKS VÀ MAP ---
+  // BỌC THÉP MẢNG KHI TẢI VỀ
   if (tableName === 'tasks') obj.subtasks = obj.subtasks || [];
   if (tableName === 'transactions') obj.tags = obj.tags || [];
   if (tableName === 'habits') obj.completedDates = obj.completedDates || [];
