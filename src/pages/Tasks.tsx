@@ -156,4 +156,97 @@ export function Tasks() {
       </div>
 
       {/* Stats Cards */}
-      <div className="grid grid-cols
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+        {[
+          { label: 'Tổng cộng', value: totalTasks, icon: <Layers className="w-5 h-5" />, color: 'text-indigo-600 bg-indigo-50 dark:bg-indigo-900/30' },
+          { label: 'Đang làm', value: inProgressCount, icon: <Clock className="w-5 h-5" />, color: 'text-blue-600 bg-blue-50 dark:bg-blue-900/30' },
+          { label: 'Hoàn thành', value: completedCount, icon: <CheckCircle2 className="w-5 h-5" />, color: 'text-green-600 bg-green-50 dark:bg-green-900/30' },
+          { label: 'Hôm nay', value: todayCount, icon: <Calendar className="w-5 h-5" />, color: 'text-amber-600 bg-amber-50 dark:bg-amber-900/30' },
+          { label: 'Quá hạn', value: overdueCount, icon: <AlertTriangle className="w-5 h-5" />, color: 'text-red-600 bg-red-50 dark:bg-red-900/30' },
+        ].map((stat, i) => (
+          <div key={i} className="bg-white dark:bg-gray-800 rounded-xl p-3 border dark:border-gray-700 shadow-sm">
+            <div className="flex items-center gap-2 mb-1"><div className={`p-1.5 rounded-lg ${stat.color}`}>{stat.icon}</div></div>
+            <div className="text-2xl font-bold text-gray-900 dark:text-white">{stat.value}</div>
+            <div className="text-xs text-gray-500 dark:text-gray-400">{stat.label}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* View Table (Thu gọn code hiển thị cho gọn - Vẫn giữ nguyên logic cũ) */}
+      {viewMode === 'table' && (
+        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border dark:border-gray-700 overflow-hidden overflow-x-auto">
+          <table className="w-full min-w-[900px]">
+            <thead className="bg-gray-50 dark:bg-gray-900/50 border-b dark:border-gray-700">
+              <tr>
+                <th className="w-10 px-3 py-3"></th><th className="w-10 px-2 py-3"></th>
+                <th className="px-3 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Công việc</th>
+                <th className="px-3 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Trạng thái</th>
+                <th className="px-3 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Ưu tiên</th>
+                <th className="px-3 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Tiến độ</th>
+                <th className="px-3 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Hạn chót</th>
+                <th className="px-3 py-3 text-center text-xs font-semibold text-gray-500 uppercase">Thao tác</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y dark:divide-gray-700">
+              {filtered.map(task => {
+                const isExpanded = expandedTasks.has(task.id);
+                const subs = task.subtasks || [];
+                const progress = subs.length > 0 ? Math.round((subs.filter(s => s.completed).length / subs.length) * 100) : (task.completed ? 100 : 0);
+                const pc = priorityConfig[task.priority];
+                const isDone = task.completed || task.status === 'done';
+
+                return (
+                  <tr key={task.id} className={`hover:bg-gray-50 dark:hover:bg-gray-700/50 ${isDone ? 'opacity-60' : ''}`}>
+                    <td className="px-3 py-3">{subs.length > 0 && <button onClick={() => toggleExpand(task.id)}><ChevronDown className="w-4 h-4 text-gray-500" /></button>}</td>
+                    <td className="px-2 py-3"><button onClick={() => completeTask(task.id)}>{isDone ? <CheckCircle2 className="w-5 h-5 text-green-500" /> : <Circle className="w-5 h-5 text-gray-300" />}</button></td>
+                    <td className="px-3 py-3"><span className={`text-sm font-medium dark:text-white ${isDone ? 'line-through' : ''}`}>{task.title}</span></td>
+                    <td className="px-3 py-3"><select value={task.status || 'todo'} onChange={e => changeTaskStatus(task.id, e.target.value as 'todo')} className={`px-2 py-1 rounded-lg text-xs font-medium ${statusConfig[task.status || 'todo'].color}`}><option value="todo">📋 Chờ làm</option><option value="in_progress">🔄 Đang làm</option><option value="done">✅ Hoàn thành</option></select></td>
+                    <td className="px-3 py-3"><span className={`px-2 py-1 rounded-lg text-xs font-medium ${pc.color}`}>{pc.label}</span></td>
+                    <td className="px-3 py-3"><div className="w-[80px] bg-gray-200 rounded-full h-2"><div className="bg-indigo-500 h-2 rounded-full" style={{ width: `${progress}%` }} /></div></td>
+                    <td className="px-3 py-3"><span className="text-xs font-medium dark:text-gray-300">{format(new Date(task.dueDate), 'dd/MM/yyyy')}</span></td>
+                    <td className="px-3 py-3 text-center">
+                      <button onClick={() => setDetailTask(task.id)} className="p-1 text-blue-500"><Eye className="w-4 h-4" /></button>
+                      <button onClick={() => deleteRecord(task.id)} className="p-1 text-red-500"><Trash2 className="w-4 h-4" /></button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Board View Shortcut (giữ nguyên logic gốc) */}
+      {viewMode === 'board' && (
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          {(Object.entries(statusConfig)).map(([key, val]) => (
+            <div key={key} className="bg-gray-50 dark:bg-gray-900/30 p-3 rounded-xl border dark:border-gray-700">
+              <h3 className="font-semibold text-sm mb-3 dark:text-white flex gap-2">{val.icon} {val.label}</h3>
+              <div className="space-y-2">
+                {filtered.filter(t => (t.status || 'todo') === key).map(task => (
+                  <div key={task.id} onClick={() => setDetailTask(task.id)} className={`bg-white dark:bg-gray-800 p-3 rounded-lg border dark:border-gray-700 cursor-pointer border-l-3 ${priorityConfig[task.priority].border}`}>
+                    <h4 className="font-medium text-sm dark:text-white">{task.title}</h4>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Tạo Task Mới Modal */}
+      {showModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-gray-800 rounded-2xl w-full max-w-lg p-4">
+            <div className="flex justify-between mb-4"><h2 className="text-lg font-bold dark:text-white">Thêm công việc</h2><button onClick={() => setShowModal(false)}><X /></button></div>
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <input type="text" value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} className="w-full px-3 py-2 border dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white" required placeholder="Tiêu đề *" />
+              <input type="date" value={form.dueDate} onChange={e => setForm({ ...form, dueDate: e.target.value })} className="w-full px-3 py-2 border dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white" required />
+              <button type="submit" className="w-full bg-indigo-600 text-white py-3 rounded-lg font-semibold">Tạo công việc</button>
+            </form>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
