@@ -1,7 +1,7 @@
 import { createContext, useContext, useState, useEffect, ReactNode, useCallback, useRef } from 'react';
 import { User, Transaction, Budget, Debt, Investment, SavingsGoal, Task, Event, Goal, Habit, Note, Journal, Notification, Activity, Subtask } from '../types';
 import { generateId } from '../utils/storage';
-import { getLocalDateString, calculateStreak } from '../utils/date';
+import { getLocalDateString } from '../utils/date';
 import { 
   supabase, 
   onAuthStateChange,
@@ -144,7 +144,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
     let timer: any;
     if (isLoading) {
       timer = setTimeout(async () => {
-        console.warn("⏳ Supabase phản hồi chậm. Đang ép buộc vào Dashboard...");
         const { data: { session } } = await supabase.auth.getSession();
         if (session?.user && !user) {
           setUser({
@@ -157,19 +156,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
           });
         }
         setIsLoading(false);
-      }, 15000); // Giảm xuống 15 giây vì giờ tải rất nhanh
+      }, 10000); 
     }
     return () => clearTimeout(timer);
   }, [isLoading, user]);
 
   useEffect(() => {
     const { data: { subscription } } = onAuthStateChange(async (event, session) => {
-      console.log(`🔐 Sự kiện Supabase: ${event}`);
-
       if (session?.user) {
-        if (fetchedUserId.current === session.user.id) {
-          return;
-        }
+        if (fetchedUserId.current === session.user.id) return;
+        
         setIsLoading(true);
         fetchedUserId.current = session.user.id; 
         await loadUserDataFromSupabase(session.user.id, session.user);
@@ -189,7 +185,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const loadUserDataFromSupabase = async (userId: string, supabaseUser: SupabaseUser) => {
     try {
-      console.log("🟢 1. Bắt đầu tải Profile...");
       const profile = await fetchUserProfile(userId);
       
       const loadedUser: User = {
@@ -205,12 +200,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setTheme(loadedUser.settings.theme);
       setLanguageState(loadedUser.settings.language);
 
-      console.log("🟡 2. Tải 4 bảng Ưu Tiên cho Dashboard...");
+      // TRUYỀN MÃ userId VÀO TỪNG BẢNG ĐỂ TRÁNH QUÁ TẢI SUPABASE
       const [ loadedTransactions, loadedTasks, loadedBudgets, loadedHabits ] = await Promise.all([
-        fetchUserData<Transaction>('transactions'), 
-        fetchUserData<Task>('tasks'),
-        fetchUserData<Budget>('budgets'),
-        fetchUserData<Habit>('habits')
+        fetchUserData<Transaction>('transactions', userId, 'date', 60), 
+        fetchUserData<Task>('tasks', userId),
+        fetchUserData<Budget>('budgets', userId),
+        fetchUserData<Habit>('habits', userId)
       ]);
 
       setTransactions(loadedTransactions);
@@ -218,32 +213,33 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setBudgets(loadedBudgets);
       setHabits(loadedHabits);
 
-      console.log("🚀 3. Mở khóa Dashboard ngay lập tức!");
-      setIsLoading(false); // <--- ĐIỂM ĂN TIỀN LÀ ĐÂY! Cắt loading ngay lập tức.
+      // MỞ KHÓA DASHBOARD NGAY LẬP TỨC
+      setIsLoading(false); 
 
-      console.log("⏳ 4. Đang tải ngầm các dữ liệu phụ...");
-      Promise.all([
-        fetchUserData<Debt>('debts'),
-        fetchUserData<Investment>('investments'),
-        fetchUserData<SavingsGoal>('savings_goals'),
-        fetchUserData<Event>('events'),
-        fetchUserData<Goal>('goals'),
-        fetchUserData<Note>('notes'),
-        fetchUserData<Journal>('journal'),
-        fetchUserData<Notification>('notifications'),
-        fetchUserData<Activity>('activities')
-      ]).then(([loadedDebts, loadedInvestments, loadedSavings, loadedEvents, loadedGoals, loadedNotes, loadedJournal, loadedNotifs, loadedActivities]) => {
-          setDebts(loadedDebts);
-          setInvestments(loadedInvestments);
-          setSavingsGoals(loadedSavings);
-          setEvents(loadedEvents);
-          setGoals(loadedGoals);
-          setNotes(loadedNotes);
-          setJournal(loadedJournal);
-          setNotifications(loadedNotifs);
-          setActivities(loadedActivities);
-          console.log("🎉 5. Đã tải ngầm xong 100% dữ liệu!");
-      });
+      // TẢI NGẦM CHẬM LẠI ĐỂ KHÔNG CHẾT MẠNG
+      setTimeout(() => {
+        Promise.all([
+          fetchUserData<Debt>('debts', userId),
+          fetchUserData<Investment>('investments', userId),
+          fetchUserData<SavingsGoal>('savings_goals', userId),
+          fetchUserData<Event>('events', userId),
+          fetchUserData<Goal>('goals', userId),
+          fetchUserData<Note>('notes', userId),
+          fetchUserData<Journal>('journal', userId, 'date', 30),
+          fetchUserData<Notification>('notifications', userId),
+          fetchUserData<Activity>('activities', userId)
+        ]).then(([loadedDebts, loadedInvestments, loadedSavings, loadedEvents, loadedGoals, loadedNotes, loadedJournal, loadedNotifs, loadedActivities]) => {
+            setDebts(loadedDebts);
+            setInvestments(loadedInvestments);
+            setSavingsGoals(loadedSavings);
+            setEvents(loadedEvents);
+            setGoals(loadedGoals);
+            setNotes(loadedNotes);
+            setJournal(loadedJournal);
+            setNotifications(loadedNotifs);
+            setActivities(loadedActivities);
+        });
+      }, 1500); // Đợi 1.5 giây mới tải phụ
 
     } catch (error) {
       console.error('❌ Lỗi tải dữ liệu:', error);
@@ -287,9 +283,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if (updated.settings.language !== language) setLanguageState(updated.settings.language);
     }
   };
-
-  const toggleTheme = () => { const newTheme = theme === 'light' ? 'dark' : 'light'; setTheme(newTheme); if (user) updateUser({ settings: { ...user.settings, theme: newTheme } }); };
-  const setLanguage = (lang: 'vi' | 'en' | 'zh') => { setLanguageState(lang); if (user) updateUser({ settings: { ...user.settings, language: lang } }); };
 
   const updateParentTaskStatus = (task: Task): Task => {
     if (task.subtasks.length === 0) return task;
