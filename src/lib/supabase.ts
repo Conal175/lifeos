@@ -123,16 +123,15 @@ export const onAuthStateChange = (callback: (event: string, session: Session | n
 // Generic fetch function with RLS (Row Level Security)
 export async function fetchUserData<T>(
   tableName: string, 
+  userId: string, // <-- NHẬN ID TRỰC TIẾP
   dateColumn?: string, 
   daysLimit: number = 30
 ): Promise<T[]> {
-  const { data: { session } } = await supabase.auth.getSession();
-  if (!session?.user) return [];
+  // Đã xóa lệnh gọi session làm nghẽn mạng ở đây
 
-  // 1. Sửa lỗi gọi sai tên cột (Đổi userId thành user_id)
-  let query = supabase.from(tableName).select('*').eq('user_id', session.user.id);
+  let query = supabase.from(tableName).select('*').eq('user_id', userId);
 
-  // 2. Lọc theo ngày để tăng tốc độ tải
+  // Lọc theo ngày để tăng tốc
   if (dateColumn) {
     const pastDate = new Date();
     pastDate.setDate(pastDate.getDate() - daysLimit);
@@ -143,9 +142,18 @@ export async function fetchUserData<T>(
   const { data, error } = await query;
   if (error) {
     console.error(`❌ Lỗi tải bảng ${tableName}:`, error);
-    return []; // Trả về mảng rỗng để web không bị treo
+    return [];
   }
 
+  // Dịch user_id thành userId cho React hiểu
+  const mappedData = data.map((item: any) => {
+    const newItem = { ...item, userId: item.user_id };
+    delete newItem.user_id;
+    return newItem;
+  });
+
+  return mappedData as T[];
+}
   // 3. Dịch ngược user_id về lại userId cho giao diện React hiểu
   const mappedData = data.map((item: any) => {
     const newItem = { ...item, userId: item.user_id };
