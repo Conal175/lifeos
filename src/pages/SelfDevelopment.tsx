@@ -2,9 +2,10 @@ import { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { useTableData } from '../hooks/useData';
 import { Activity, Habit, Goal } from '../types';
-import { Plus, Trash2, X, Flame, TrendingUp, Calendar, CheckCircle2, Target, ChevronRight, Edit2 } from 'lucide-react';
-import { format, subDays, differenceInDays, startOfMonth, endOfMonth, isSameDay } from 'date-fns';
+import { Plus, Trash2, X, Flame, Calendar, CheckCircle2, Edit2, TrendingUp, Activity as ActivityIcon } from 'lucide-react';
+import { format, subDays, differenceInDays } from 'date-fns';
 import { vi } from 'date-fns/locale';
+import { BarChart, Bar, ResponsiveContainer, Tooltip, Cell } from 'recharts';
 
 const activityPresets = [
   { name: 'Chạy bộ', icon: '🏃', color: '#ef4444', unit: 'km', targetPerDay: 5 },
@@ -32,12 +33,10 @@ export function SelfDevelopment() {
   
   const isLoading = loadA || loadH || loadG;
 
-  const [activeTab, setActiveTab] = useState<'goals' | 'habits' | 'activities'>('goals');
-  const [habitViewMode, setHabitViewMode] = useState<'grid' | 'horizontal'>('grid');
+  const [activeTab, setActiveTab] = useState<'goals' | 'routines'>('routines');
   const [showActivityModal, setShowActivityModal] = useState(false);
   const [showHabitModal, setShowHabitModal] = useState(false);
   
-  // NÂNG CẤP: Quản lý trạng thái Sửa mục tiêu
   const [showGoalModal, setShowGoalModal] = useState(false);
   const [editingGoalId, setEditingGoalId] = useState<string | null>(null);
 
@@ -45,7 +44,6 @@ export function SelfDevelopment() {
   const [logDate, setLogDate] = useState(format(new Date(), 'yyyy-MM-dd'));
   const [logValue, setLogValue] = useState('');
   const [logNote, setLogNote] = useState('');
-  const [viewMonth] = useState(new Date());
 
   const [activityForm, setActivityForm] = useState({ name: '', icon: '🏃', color: '#ef4444', unit: 'km', targetPerDay: 5 });
   const [habitForm, setHabitForm] = useState({ name: '', icon: '🎯', color: '#6366f1', frequency: 'daily' as 'daily' | 'weekly' });
@@ -53,19 +51,36 @@ export function SelfDevelopment() {
 
   const today = new Date();
   const todayStr = format(today, 'yyyy-MM-dd');
-  const last7Days = Array.from({ length: 7 }, (_, i) => subDays(today, 6 - i));
+  const last7Days = Array.from({ length: 7 }, (_, i) => subDays(today, 6 - i)).reverse(); // Reverse để ngày cũ bên trái, mới bên phải
+
+  // Hàm tính Chuỗi ngày liên tiếp (Streak)
+  const getStreak = (dates: string[]) => {
+    if (!dates || dates.length === 0) return 0;
+    const sorted = [...new Set(dates)].sort().reverse();
+    let streak = 0;
+    let current = new Date();
+    const todayS = format(current, 'yyyy-MM-dd');
+    const yesterdayS = format(subDays(current, 1), 'yyyy-MM-dd');
+    
+    if (!sorted.includes(todayS) && !sorted.includes(yesterdayS)) return 0;
+    
+    let checkDate = sorted.includes(todayS) ? current : subDays(current, 1);
+    while (true) {
+      if (sorted.includes(format(checkDate, 'yyyy-MM-dd'))) {
+        streak++;
+        checkDate = subDays(checkDate, 1);
+      } else break;
+    }
+    return streak;
+  };
 
   const handleAddActivity = (e: React.FormEvent) => { e.preventDefault(); addAct({ ...activityForm, userId: user?.id, logs: [] }); setShowActivityModal(false); };
   const handleAddHabit = (e: React.FormEvent) => { e.preventDefault(); addHab({ ...habitForm, userId: user?.id, completedDates: [], streak: 0 }); setShowHabitModal(false); };
-  
-  // NÂNG CẤP TÍNH NĂNG THÊM/SỬA MỤC TIÊU
   const handleAddGoal = (e: React.FormEvent) => { 
     e.preventDefault(); 
     const mlList = goalForm.milestones.split('\n').filter(m => m.trim()).map((title, i) => ({ id: `m-${Date.now()}-${i}`, title: title.trim(), completed: false }));
-    
     if (editingGoalId) {
       const existingGoal = goals.find(g => g.id === editingGoalId);
-      // Giữ nguyên trạng thái completed của các mốc cũ nếu tên không đổi
       const updatedMilestones = mlList.map(newM => {
         const existingM = existingGoal?.milestones.find(m => m.title === newM.title);
         return existingM ? existingM : newM;
@@ -74,19 +89,13 @@ export function SelfDevelopment() {
     } else {
       addGoal({ title: goalForm.title, category: goalForm.category, deadline: goalForm.deadline, milestones: mlList, userId: user?.id }); 
     }
-
     setGoalForm({ title: '', category: 'Cá nhân', deadline: format(new Date(Date.now() + 90 * 24 * 60 * 60 * 1000), 'yyyy-MM-dd'), milestones: '' });
     setEditingGoalId(null);
     setShowGoalModal(false); 
   };
 
   const handleEditGoal = (goal: Goal) => {
-    setGoalForm({
-      title: goal.title,
-      category: goal.category || 'Cá nhân',
-      deadline: goal.deadline.split('T')[0],
-      milestones: goal.milestones.map(m => m.title).join('\n')
-    });
+    setGoalForm({ title: goal.title, category: goal.category || 'Cá nhân', deadline: goal.deadline.split('T')[0], milestones: goal.milestones.map(m => m.title).join('\n') });
     setEditingGoalId(goal.id);
     setShowGoalModal(true);
   };
@@ -101,9 +110,7 @@ export function SelfDevelopment() {
         if (existingIdx >= 0) {
           if (val === 0) newLogs.splice(existingIdx, 1);
           else newLogs[existingIdx] = { ...newLogs[existingIdx], value: val, note: logNote };
-        } else if (val > 0) {
-          newLogs.push({ date: logDate, value: val, note: logNote });
-        }
+        } else if (val > 0) newLogs.push({ date: logDate, value: val, note: logNote });
         updateAct({ id: showLogModal, data: { logs: newLogs } });
       }
       setShowLogModal(null); setLogValue(''); setLogNote('');
@@ -143,13 +150,92 @@ export function SelfDevelopment() {
       </div>
 
       <div className="flex gap-1 bg-gray-100 dark:bg-gray-800 p-1 rounded-xl w-fit">
-        {[{ key: 'goals', label: '🎯 Mục tiêu', c: goals.length }, { key: 'habits', label: '🔄 Thói quen', c: habits.length }, { key: 'activities', label: '🏃 Hoạt động', c: activities.length }].map(t => (
+        {[{ key: 'routines', label: '🔄 Thói quen & Hoạt động', c: habits.length + activities.length }, { key: 'goals', label: '🎯 Mục tiêu', c: goals.length }].map(t => (
           <button key={t.key} onClick={() => setActiveTab(t.key as any)} className={`px-4 py-2 rounded-lg font-medium flex gap-2 ${activeTab === t.key ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm' : 'text-gray-500 dark:text-gray-400'}`}>
             {t.label} <span className="bg-gray-200 dark:bg-gray-600 text-xs px-1.5 py-0.5 rounded-full">{t.c}</span>
           </button>
         ))}
       </div>
 
+      {/* --- TAB THÓI QUEN VÀ HOẠT ĐỘNG ĐÃ GỘP --- */}
+      {activeTab === 'routines' && (
+        <div className="space-y-6">
+          <div className="flex justify-end gap-2">
+            <button onClick={() => setShowHabitModal(true)} className="flex items-center gap-2 bg-white dark:bg-gray-800 border dark:border-gray-700 text-indigo-600 dark:text-indigo-400 px-4 py-2 rounded-xl font-medium shadow-sm hover:bg-gray-50 dark:hover:bg-gray-700"><Plus className="w-5 h-5" /> Tạo thói quen</button>
+            <button onClick={() => setShowActivityModal(true)} className="flex items-center gap-2 bg-indigo-600 text-white px-4 py-2 rounded-xl font-medium shadow-sm hover:bg-indigo-700"><Plus className="w-5 h-5" /> Ghi log hoạt động</button>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+            {/* Render Thói quen (Habits) */}
+            {habits.map(habit => {
+              const todayDone = habit.completedDates.includes(todayStr);
+              const streak = getStreak(habit.completedDates);
+              return (
+                <div key={habit.id} className="bg-white dark:bg-gray-800 rounded-2xl border dark:border-gray-700 overflow-hidden shadow-sm flex flex-col">
+                  <div className="p-4 border-b dark:border-gray-700 flex justify-between" style={{ backgroundColor: `${habit.color}15` }}>
+                    <div className="flex gap-3"><div className="text-2xl">{habit.icon}</div><h3 className="font-bold dark:text-white mt-1">{habit.name}</h3></div>
+                    <button onClick={() => delHab(habit.id)} className="text-red-400 hover:text-red-600"><Trash2 className="w-4 h-4"/></button>
+                  </div>
+                  <div className="flex gap-2 p-3 bg-gray-50 dark:bg-gray-900/30 text-xs text-gray-500 font-medium justify-between">
+                    <span className="flex items-center gap-1 text-orange-500"><Flame className="w-4 h-4" /> {streak} chuỗi</span>
+                    <span className="flex items-center gap-1"><Calendar className="w-4 h-4" /> Tổng: {habit.completedDates.length}</span>
+                  </div>
+                  <div className="p-4 border-b dark:border-gray-700 flex gap-1 justify-between flex-1">
+                    {last7Days.map((day, i) => {
+                      const dStr = format(day, 'yyyy-MM-dd');
+                      const done = habit.completedDates.includes(dStr);
+                      return (
+                        <div key={i} className="flex-1 flex flex-col items-center gap-1">
+                          <span className="text-[10px] text-gray-400">{format(day, 'EE', { locale: vi }).slice(0, 2)}</span>
+                          <button onClick={() => toggleHabit(habit.id, dStr)} className={`w-full aspect-square rounded-lg font-bold text-xs transition-colors ${done ? 'text-white' : 'bg-gray-100 dark:bg-gray-700'}`} style={done ? { backgroundColor: habit.color } : {}}>{done ? '✓' : ''}</button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div className="p-4"><button onClick={() => toggleHabit(habit.id, todayStr)} className={`w-full py-2.5 rounded-xl text-sm font-semibold flex justify-center gap-2 transition-colors ${todayDone ? 'bg-green-100 text-green-700' : 'bg-indigo-600 text-white hover:bg-indigo-700'}`}>{todayDone ? <><CheckCircle2 className="w-4 h-4"/> Đã hoàn thành</> : '☐ Đánh dấu hôm nay'}</button></div>
+                </div>
+              );
+            })}
+
+            {/* Render Hoạt động (Activities) */}
+            {activities.map(act => {
+              const todayLog = act.logs.find(l => l.date === todayStr);
+              const logDates = act.logs.filter(l => l.value > 0).map(l => l.date);
+              const streak = getStreak(logDates);
+              
+              // Chuẩn bị dữ liệu cho biểu đồ (7 ngày qua)
+              const chartData = last7Days.map(day => {
+                const l = act.logs.find(log => log.date === format(day, 'yyyy-MM-dd'));
+                return { name: format(day, 'EE', {locale:vi}), value: l ? l.value : 0 };
+              });
+
+              return (
+                <div key={act.id} className="bg-white dark:bg-gray-800 rounded-2xl border dark:border-gray-700 overflow-hidden shadow-sm flex flex-col">
+                  <div className="p-4 border-b dark:border-gray-700 flex justify-between">
+                    <div className="flex items-center gap-3"><div className="w-10 h-10 rounded-xl flex items-center justify-center text-xl" style={{ backgroundColor: `${act.color}15` }}>{act.icon}</div><div><h3 className="font-bold dark:text-white leading-tight">{act.name}</h3><p className="text-[11px] text-gray-500">Mục tiêu: {act.targetPerDay} {act.unit}</p></div></div>
+                    <div className="flex gap-1"><button onClick={() => { setShowLogModal(act.id); setLogDate(todayStr); setLogValue(todayLog ? String(todayLog.value) : ''); }} className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded text-gray-400"><Edit2 className="w-4 h-4"/></button><button onClick={() => delAct(act.id)} className="p-1.5 hover:bg-red-50 rounded text-red-400"><Trash2 className="w-4 h-4"/></button></div>
+                  </div>
+                  <div className="flex gap-2 p-3 bg-gray-50 dark:bg-gray-900/30 text-xs text-gray-500 font-medium justify-between">
+                    <span className="flex items-center gap-1 text-orange-500"><Flame className="w-4 h-4" /> {streak} chuỗi</span>
+                    <span className="flex items-center gap-1"><ActivityIcon className="w-4 h-4" /> Tổng: {logDates.length} lần</span>
+                  </div>
+                  <div className="px-4 pt-3 h-[70px] flex-1">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={chartData}>
+                        <Tooltip cursor={{fill: 'transparent'}} contentStyle={{ fontSize: '12px', padding: '4px' }} formatter={(val: number) => [`${val} ${act.unit}`, act.name]} />
+                        <Bar dataKey="value" fill={act.color} radius={[3,3,0,0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                  <div className="p-4 border-t dark:border-gray-700"><button onClick={() => quickLog(act.id)} className={`w-full py-2.5 rounded-xl font-semibold flex items-center justify-center gap-2 text-sm transition-colors ${todayLog ? 'bg-green-50 text-green-700 border-2 border-green-200' : 'bg-gray-50 dark:bg-gray-700 text-gray-600 dark:text-gray-300 border-2 border-dashed border-gray-300 dark:border-gray-600 hover:border-indigo-400'}`}>{todayLog ? <><CheckCircle2 className="w-4 h-4"/> Đã ghi ({todayLog.value} {act.unit})</> : <><Plus className="w-4 h-4"/> Click để ghi nhận</>}</button></div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* --- TAB MỤC TIÊU GIỮ NGUYÊN NHƯ CŨ --- */}
       {activeTab === 'goals' && (
         <div className="space-y-4">
           <div className="flex justify-end"><button onClick={() => { setGoalForm({ title: '', category: 'Cá nhân', deadline: format(new Date(Date.now() + 90 * 24 * 60 * 60 * 1000), 'yyyy-MM-dd'), milestones: '' }); setEditingGoalId(null); setShowGoalModal(true); }} className="flex items-center gap-2 bg-gradient-to-r from-indigo-600 to-purple-600 text-white px-5 py-2.5 rounded-xl font-medium"><Plus className="w-5 h-5" /> Tạo mục tiêu</button></div>
@@ -163,7 +249,6 @@ export function SelfDevelopment() {
                     <div><h3 className="font-bold dark:text-white">{goal.title}</h3><span className="text-xs px-2 py-0.5 bg-indigo-100 text-indigo-700 rounded-full mt-1 inline-block">{goal.category}</span></div>
                     <div className="flex items-center gap-2">
                       <div className="text-2xl font-bold mr-2" style={{ color: isCompleted ? '#22c55e' : '#6366f1' }}>{progress}%</div>
-                      {/* NÚT CHỈNH SỬA Ở ĐÂY */}
                       <button onClick={() => handleEditGoal(goal)} className="p-1 text-gray-500 hover:bg-gray-100 rounded transition-colors"><Edit2 className="w-4 h-4"/></button>
                       <button onClick={() => delGoal(goal.id)} className="p-1 text-red-400 hover:bg-red-50 rounded transition-colors"><Trash2 className="w-4 h-4"/></button>
                     </div>
@@ -184,96 +269,7 @@ export function SelfDevelopment() {
         </div>
       )}
 
-      {activeTab === 'habits' && (
-        <div className="space-y-4">
-          <div className="flex justify-between">
-            <div className="flex gap-2">
-              <button onClick={() => setHabitViewMode('grid')} className={`px-4 py-2 rounded-lg text-sm font-medium ${habitViewMode === 'grid' ? 'bg-indigo-600 text-white' : 'bg-gray-100 dark:bg-gray-700 text-gray-600'}`}>🔲 Lưới</button>
-              <button onClick={() => setHabitViewMode('horizontal')} className={`px-4 py-2 rounded-lg text-sm font-medium ${habitViewMode === 'horizontal' ? 'bg-indigo-600 text-white' : 'bg-gray-100 dark:bg-gray-700 text-gray-600'}`}>📊 Ngang</button>
-            </div>
-            <button onClick={() => setShowHabitModal(true)} className="flex items-center gap-2 bg-indigo-600 text-white px-5 py-2.5 rounded-xl font-medium"><Plus className="w-5 h-5" /> Thêm thói quen</button>
-          </div>
-          {habitViewMode === 'grid' ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {habits.map(habit => {
-                const todayDone = habit.completedDates.includes(todayStr);
-                return (
-                  <div key={habit.id} className="bg-white dark:bg-gray-800 rounded-2xl border dark:border-gray-700 overflow-hidden">
-                    <div className="p-4 border-b dark:border-gray-700 flex justify-between" style={{ backgroundColor: `${habit.color}15` }}>
-                      <div className="flex gap-3"><div className="text-2xl">{habit.icon}</div><h3 className="font-bold dark:text-white mt-1">{habit.name}</h3></div>
-                      <button onClick={() => delHab(habit.id)} className="text-red-400"><Trash2 className="w-4 h-4"/></button>
-                    </div>
-                    <div className="p-4 border-b dark:border-gray-700 flex gap-1">
-                      {last7Days.map((day, i) => {
-                        const dStr = format(day, 'yyyy-MM-dd');
-                        const done = habit.completedDates.includes(dStr);
-                        return (
-                          <div key={i} className="flex-1 flex flex-col items-center gap-1">
-                            <button onClick={() => toggleHabit(habit.id, dStr)} className={`w-full aspect-square rounded-lg font-bold text-xs ${done ? 'text-white' : 'bg-gray-100 dark:bg-gray-700'}`} style={done ? { backgroundColor: habit.color } : {}}>{done ? '✓' : ''}</button>
-                            <span className="text-[10px] text-gray-400">{format(day, 'EEEE', { locale: vi }).slice(0, 2)}</span>
-                          </div>
-                        );
-                      })}
-                    </div>
-                    <div className="p-4"><button onClick={() => toggleHabit(habit.id, todayStr)} className={`w-full py-2.5 rounded-xl text-sm font-semibold flex justify-center gap-2 ${todayDone ? 'bg-green-100 text-green-700' : 'bg-indigo-600 text-white'}`}>{todayDone ? <><CheckCircle2 className="w-4 h-4"/> Đã hoàn thành</> : '☐ Hoàn thành hôm nay'}</button></div>
-                  </div>
-                );
-              })}
-            </div>
-          ) : (
-            <div className="bg-white dark:bg-gray-800 rounded-2xl border dark:border-gray-700 overflow-hidden">
-              <div className="grid grid-cols-[200px_repeat(7,1fr)] gap-2 p-4 bg-gray-50 dark:bg-gray-900/50 border-b dark:border-gray-700">
-                <div className="text-sm font-semibold dark:text-gray-300">Thói quen</div>
-                {last7Days.map((d, i) => <div key={i} className="text-center text-xs dark:text-gray-400">{format(d, 'dd/MM')}</div>)}
-              </div>
-              {habits.map(habit => (
-                <div key={habit.id} className="grid grid-cols-[200px_repeat(7,1fr)] gap-2 p-4 border-b dark:border-gray-700 items-center">
-                  <div className="flex items-center gap-3"><div className="w-8 h-8 rounded bg-gray-100 flex items-center justify-center text-lg">{habit.icon}</div><span className="font-medium text-sm dark:text-white">{habit.name}</span></div>
-                  {last7Days.map((day, i) => {
-                    const dateStr = format(day, 'yyyy-MM-dd');
-                    const done = habit.completedDates.includes(dateStr);
-                    return <div key={i} className="flex justify-center"><button onClick={() => toggleHabit(habit.id, dateStr)} className={`w-8 h-8 rounded font-bold ${done ? 'text-white' : 'bg-gray-100 dark:bg-gray-700'}`} style={done ? { backgroundColor: habit.color } : {}}>{done ? '✓' : ''}</button></div>;
-                  })}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
-      {activeTab === 'activities' && (
-        <div className="space-y-4">
-          <div className="flex justify-end"><button onClick={() => setShowActivityModal(true)} className="flex items-center gap-2 bg-indigo-600 text-white px-5 py-2.5 rounded-xl font-medium"><Plus className="w-5 h-5" /> Thêm hoạt động</button></div>
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            {activities.map(act => {
-              const todayLog = act.logs.find(l => l.date === todayStr);
-              return (
-                <div key={act.id} className="bg-white dark:bg-gray-800 rounded-2xl border dark:border-gray-700 overflow-hidden">
-                  <div className="p-4 border-b dark:border-gray-700 flex justify-between">
-                    <div className="flex items-center gap-3"><div className="w-12 h-12 rounded-xl flex items-center justify-center text-2xl" style={{ backgroundColor: `${act.color}15` }}>{act.icon}</div><div><h3 className="font-bold dark:text-white">{act.name}</h3><p className="text-xs text-gray-500">Mục tiêu: {act.targetPerDay} {act.unit}/ngày</p></div></div>
-                    <div className="flex gap-1"><button onClick={() => { setShowLogModal(act.id); setLogDate(todayStr); setLogValue(todayLog ? String(todayLog.value) : ''); }} className="p-2"><Edit2 className="w-4 h-4 text-gray-400"/></button><button onClick={() => delAct(act.id)} className="p-2"><Trash2 className="w-4 h-4 text-red-400"/></button></div>
-                  </div>
-                  <div className="p-4 border-b dark:border-gray-700"><button onClick={() => quickLog(act.id)} className={`w-full py-3 rounded-xl font-semibold flex items-center justify-center gap-2 ${todayLog ? 'bg-green-50 text-green-700 border-2 border-green-200' : 'bg-gray-50 text-gray-600 border-2 border-dashed'}`}>{todayLog ? <><CheckCircle2 className="w-5 h-5"/> Đã hoàn thành ({todayLog.value} {act.unit})</> : <><Plus className="w-5 h-5"/> Đánh dấu hoàn thành hôm nay</>}</button></div>
-                  <div className="p-4 flex gap-1.5">
-                    {last7Days.map((day, i) => {
-                      const dStr = format(day, 'yyyy-MM-dd');
-                      const log = act.logs.find(l => l.date === dStr);
-                      return (
-                        <div key={i} className="flex-1 flex flex-col items-center gap-1">
-                          <div onClick={() => { setShowLogModal(act.id); setLogDate(dStr); setLogValue(log ? String(log.value) : ''); }} className={`w-full aspect-square rounded-lg flex items-center justify-center text-xs font-bold cursor-pointer ${log ? 'text-white' : 'bg-gray-100 dark:bg-gray-700'}`} style={log ? { backgroundColor: act.color } : {}}>{log ? '✓' : ''}</div>
-                          <span className="text-[10px] text-gray-400">{format(day, 'EE', { locale: vi }).slice(0, 2)}</span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* Modals */}
+      {/* --- MODALS --- */}
       {showGoalModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50"><div className="bg-white dark:bg-gray-800 rounded-xl p-5 w-full max-w-md"><div className="flex justify-between mb-4"><h2 className="font-bold text-lg dark:text-white">{editingGoalId ? 'Sửa mục tiêu' : 'Tạo mục tiêu'}</h2><button onClick={() => setShowGoalModal(false)}><X className="w-5 h-5"/></button></div><form onSubmit={handleAddGoal} className="space-y-3"><input type="text" value={goalForm.title} onChange={e => setGoalForm({...goalForm, title: e.target.value})} className="w-full p-2 border rounded dark:bg-gray-700 dark:text-white" required placeholder="Tên mục tiêu *" /><select value={goalForm.category} onChange={e => setGoalForm({...goalForm, category: e.target.value})} className="w-full p-2 border rounded dark:bg-gray-700 dark:text-white">{goalCategories.map(c => <option key={c} value={c}>{c}</option>)}</select><input type="date" value={goalForm.deadline} onChange={e => setGoalForm({...goalForm, deadline: e.target.value})} className="w-full p-2 border rounded dark:bg-gray-700 dark:text-white" required /><textarea value={goalForm.milestones} onChange={e => setGoalForm({...goalForm, milestones: e.target.value})} className="w-full p-2 border rounded dark:bg-gray-700 dark:text-white" rows={6} placeholder="Các cột mốc (mỗi dòng 1 mốc)&#10;Mốc 1&#10;Mốc 2" /><button type="submit" className="w-full py-3 mt-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-lg transition-colors">{editingGoalId ? 'Cập nhật mục tiêu' : 'Lưu mục tiêu'}</button></form></div></div>
       )}
