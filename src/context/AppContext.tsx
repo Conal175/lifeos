@@ -138,7 +138,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [activities, setActivities] = useState<Activity[]>([]);
 
-  // 🛡️ CHÌA KHÓA CHỐNG SPAM SUPABASE
   const fetchedUserId = useRef<string | null>(null);
 
   useEffect(() => {
@@ -158,7 +157,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           });
         }
         setIsLoading(false);
-      }, 20000);
+      }, 15000); // Giảm xuống 15 giây vì giờ tải rất nhanh
     }
     return () => clearTimeout(timer);
   }, [isLoading, user]);
@@ -169,11 +168,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
       if (session?.user) {
         if (fetchedUserId.current === session.user.id) {
-          console.log("⏩ Đã tải dữ liệu, chặn spam load lặp lại!");
-          setIsLoading(false);
           return;
         }
-
         setIsLoading(true);
         fetchedUserId.current = session.user.id; 
         await loadUserDataFromSupabase(session.user.id, session.user);
@@ -209,28 +205,48 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setTheme(loadedUser.settings.theme);
       setLanguageState(loadedUser.settings.language);
 
-      console.log("🟡 2. Đang tải dữ liệu từ 13 bảng...");
-      const [ loadedTransactions, loadedBudgets, loadedDebts, loadedInvestments, loadedSavingsGoals, loadedTasks ] = await Promise.all([
-        fetchUserData<Transaction>('transactions'), fetchUserData<Budget>('budgets'), fetchUserData<Debt>('debts'),
-        fetchUserData<Investment>('investments'), fetchUserData<SavingsGoal>('savings_goals'), fetchUserData<Task>('tasks'),
+      console.log("🟡 2. Tải 4 bảng Ưu Tiên cho Dashboard...");
+      const [ loadedTransactions, loadedTasks, loadedBudgets, loadedHabits ] = await Promise.all([
+        fetchUserData<Transaction>('transactions'), 
+        fetchUserData<Task>('tasks'),
+        fetchUserData<Budget>('budgets'),
+        fetchUserData<Habit>('habits')
       ]);
 
-      const [ loadedEvents, loadedGoals, loadedHabits, loadedNotes, loadedJournal, loadedNotifications, loadedActivities ] = await Promise.all([
-        fetchUserData<Event>('events'), fetchUserData<Goal>('goals'), fetchUserData<Habit>('habits'), fetchUserData<Note>('notes'),
-        fetchUserData<Journal>('journal'), fetchUserData<Notification>('notifications'), fetchUserData<Activity>('activities')
-      ]);
+      setTransactions(loadedTransactions);
+      setTasks(loadedTasks);
+      setBudgets(loadedBudgets);
+      setHabits(loadedHabits);
 
-      console.log("🔵 3. Dữ liệu đã tải xong. Đang cập nhật hệ thống...");
-      setTransactions(loadedTransactions); setBudgets(loadedBudgets); setDebts(loadedDebts);
-      setInvestments(loadedInvestments); setSavingsGoals(loadedSavingsGoals); setTasks(loadedTasks);
-      setEvents(loadedEvents); setGoals(loadedGoals); setHabits(loadedHabits);
-      setNotes(loadedNotes); setJournal(loadedJournal); setNotifications(loadedNotifications);
-      setActivities(loadedActivities);
+      console.log("🚀 3. Mở khóa Dashboard ngay lập tức!");
+      setIsLoading(false); // <--- ĐIỂM ĂN TIỀN LÀ ĐÂY! Cắt loading ngay lập tức.
 
-      console.log("✅ 4. Hoàn tất!");
+      console.log("⏳ 4. Đang tải ngầm các dữ liệu phụ...");
+      Promise.all([
+        fetchUserData<Debt>('debts'),
+        fetchUserData<Investment>('investments'),
+        fetchUserData<SavingsGoal>('savings_goals'),
+        fetchUserData<Event>('events'),
+        fetchUserData<Goal>('goals'),
+        fetchUserData<Note>('notes'),
+        fetchUserData<Journal>('journal'),
+        fetchUserData<Notification>('notifications'),
+        fetchUserData<Activity>('activities')
+      ]).then(([loadedDebts, loadedInvestments, loadedSavings, loadedEvents, loadedGoals, loadedNotes, loadedJournal, loadedNotifs, loadedActivities]) => {
+          setDebts(loadedDebts);
+          setInvestments(loadedInvestments);
+          setSavingsGoals(loadedSavings);
+          setEvents(loadedEvents);
+          setGoals(loadedGoals);
+          setNotes(loadedNotes);
+          setJournal(loadedJournal);
+          setNotifications(loadedNotifs);
+          setActivities(loadedActivities);
+          console.log("🎉 5. Đã tải ngầm xong 100% dữ liệu!");
+      });
+
     } catch (error) {
-      console.error('❌ Lỗi nghiêm trọng khi tải dữ liệu:', error);
-    } finally {
+      console.error('❌ Lỗi tải dữ liệu:', error);
       setIsLoading(false);
     }
   };
