@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { fetchUserData, insertData, updateData, deleteData } from '../lib/supabase';
 import { useApp } from '../context/AppContext';
+import { generateId } from '../utils/storage'; // <-- ĐÃ THÊM HÀM TẠO ID
 
 // Cỗ máy đa năng: Tự động kéo dữ liệu, lưu cache và cập nhật giao diện
 export function useTableData<T>(tableName: string, dateColumn?: string, daysLimit?: number) {
@@ -17,7 +18,14 @@ export function useTableData<T>(tableName: string, dateColumn?: string, daysLimi
 
   // 2. CÁC HÀM THAO TÁC (Tự động xóa Cache cũ để web tự cập nhật data mới)
   const addMutation = useMutation({
-    mutationFn: (newData: any) => insertData(tableName, newData),
+    mutationFn: (newData: any) => {
+      const dataToInsert = { ...newData };
+      // TỰ ĐỘNG BƠM ID NẾU DỮ LIỆU CHƯA CÓ ID
+      if (!dataToInsert.id) {
+        dataToInsert.id = generateId();
+      }
+      return insertData(tableName, dataToInsert);
+    },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: [tableName] }),
   });
 
