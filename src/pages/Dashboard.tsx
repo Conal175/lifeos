@@ -10,22 +10,24 @@ const avatars = ['👤', '👨', '👩', '🧑', '👨‍💼', '👩‍💼'];
 const categoryColors = ['#6366f1', '#8b5cf6', '#ec4899', '#f43f5e', '#f97316', '#eab308'];
 
 export function Dashboard() {
-  const { user, transactions, tasks, savingsGoals, events, debts, investments, budgets } = useApp();
+  // LẤY ĐẦY ĐỦ CÁC BIẾN TỪ APP CONTEXT, BAO GỒM CẢ THEME
+  const { user, theme, transactions = [], tasks = [], savingsGoals = [], events = [], debts = [], investments = [], budgets = [] } = useApp();
   const [todayTasks, setTodayTasks] = useState(0);
   const [completedToday, setCompletedToday] = useState(0);
 
   useEffect(() => {
     const today = getLocalDateString();
-    const todayTasksCount = tasks.filter(t => t.dueDate.split('T')[0] === today).length;
+    const todayTasksCount = tasks.filter(t => t.dueDate && t.dueDate.split('T')[0] === today).length;
     const completedTodayCount = tasks.filter(t => t.completedAt && t.completedAt.split('T')[0] === today).length;
     setTodayTasks(todayTasksCount);
     setCompletedToday(completedTodayCount);
   }, [tasks]);
 
-  // Calculate totals
-  const totalIncome = transactions.filter(t => t.type === 'income').reduce((sum, t) => sum + t.amount, 0);
-  const totalExpense = transactions.filter(t => t.type === 'expense').reduce((sum, t) => sum + t.amount, 0);
+  // Calculate totals an toàn (tránh lỗi undefined)
+  const totalIncome = transactions.filter(t => t.type === 'income').reduce((sum, t) => sum + (t.amount || 0), 0);
+  const totalExpense = transactions.filter(t => t.type === 'expense').reduce((sum, t) => sum + (t.amount || 0), 0);
   const balance = totalIncome - totalExpense;
+  // Sửa lỗi chia cho 0 an toàn
   const savingsRate = totalIncome > 0 ? ((totalIncome - totalExpense) / totalIncome) * 100 : 0;
 
   // Task progress
@@ -40,8 +42,8 @@ export function Dashboard() {
   const last7Days = eachDayOfInterval({ start: new Date(Date.now() - 6 * 24 * 60 * 60 * 1000), end: new Date() });
   const cashFlowData = last7Days.map(day => {
     const dateStr = format(day, 'yyyy-MM-dd');
-    const dayIncome = transactions.filter(t => t.type === 'income' && t.date.startsWith(dateStr)).reduce((sum, t) => sum + t.amount, 0);
-    const dayExpense = transactions.filter(t => t.type === 'expense' && t.date.startsWith(dateStr)).reduce((sum, t) => sum + t.amount, 0);
+    const dayIncome = transactions.filter(t => t.type === 'income' && t.date && t.date.startsWith(dateStr)).reduce((sum, t) => sum + (t.amount || 0), 0);
+    const dayExpense = transactions.filter(t => t.type === 'expense' && t.date && t.date.startsWith(dateStr)).reduce((sum, t) => sum + (t.amount || 0), 0);
     return {
       date: format(day, 'dd/MM', { locale: vi }),
       income: dayIncome,
@@ -53,7 +55,7 @@ export function Dashboard() {
   const expenseByCategory = transactions
     .filter(t => t.type === 'expense')
     .reduce((acc, t) => {
-      acc[t.category] = (acc[t.category] || 0) + t.amount;
+      acc[t.category] = (acc[t.category] || 0) + (t.amount || 0);
       return acc;
     }, {} as Record<string, number>);
 
@@ -62,14 +64,15 @@ export function Dashboard() {
     .slice(0, 6)
     .map(([name, value], index) => ({ name, value, color: categoryColors[index % categoryColors.length] }));
 
-  // Today's events
+  // Today's events an toàn
   const todayEvents = events.filter(e => {
+    if (!e.startDate) return false;
     const eventDate = e.startDate.split('T')[0];
     return eventDate === getLocalDateString();
   });
 
-  // Overdue tasks
-  const overdueTasks = tasks.filter(t => !t.completed && new Date(t.dueDate) < new Date());
+  // Overdue tasks an toàn
+  const overdueTasks = tasks.filter(t => !t.completed && t.dueDate && new Date(t.dueDate) < new Date());
 
   const taskCompletionToday = todayTasks > 0 ? (completedToday / todayTasks) * 100 : 0;
 
@@ -154,7 +157,7 @@ export function Dashboard() {
       </div>
 
       {/* Warnings */}
-      {(overdueTasks.length > 0 || debts.some(d => !d.completed && new Date(d.dueDate) < new Date()) || budgets.some(b => b.limit > 0 && (b.spent / b.limit) >= 0.8)) && (
+      {(overdueTasks.length > 0 || debts.some(d => !d.completed && d.dueDate && new Date(d.dueDate) < new Date()) || budgets.some(b => b.limit > 0 && (b.spent / b.limit) >= 0.8)) && (
         <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl p-4">
           <div className="flex items-center gap-2 text-red-600 dark:text-red-400 mb-2">
             <AlertTriangle className="w-5 h-5" />
@@ -163,7 +166,7 @@ export function Dashboard() {
           {overdueTasks.length > 0 && (
             <p className="text-sm text-red-600 dark:text-red-400">• {overdueTasks.length} công việc quá hạn</p>
           )}
-          {debts.filter(d => !d.completed && new Date(d.dueDate) < new Date()).length > 0 && (
+          {debts.filter(d => !d.completed && d.dueDate && new Date(d.dueDate) < new Date()).length > 0 && (
             <p className="text-sm text-red-600 dark:text-red-400">• Có khoản nợ quá hạn cần thanh toán</p>
           )}
           {budgets.filter(b => b.limit > 0 && (b.spent / b.limit) >= 0.8).map(b => (
@@ -179,11 +182,11 @@ export function Dashboard() {
           <h3 className="font-semibold mb-4 text-gray-900 dark:text-white">Luồng tiền (7 ngày)</h3>
           <ResponsiveContainer width="100%" height={250}>
             <BarChart data={cashFlowData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-              <XAxis dataKey="date" stroke="#6b7280" />
-              <YAxis stroke="#6b7280" />
+              <CartesianGrid strokeDasharray="3 3" stroke={theme === 'dark' ? '#374151' : '#e5e7eb'} />
+              <XAxis dataKey="date" stroke={theme === 'dark' ? '#9ca3af' : '#4b5563'} />
+              <YAxis stroke={theme === 'dark' ? '#9ca3af' : '#4b5563'} />
               <Tooltip 
-                contentStyle={{ backgroundColor: '#1f2937', border: 'none', borderRadius: '8px', color: '#fff' }}
+                contentStyle={{ backgroundColor: theme === 'dark' ? '#1f2937' : '#ffffff', border: 'none', borderRadius: '8px', color: theme === 'dark' ? '#fff' : '#000', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)' }}
               />
               <Bar dataKey="income" fill="#22c55e" name="Thu" />
               <Bar dataKey="expense" fill="#ef4444" name="Chi" />
@@ -209,7 +212,7 @@ export function Dashboard() {
                 ))}
               </Pie>
               <Tooltip 
-                contentStyle={{ backgroundColor: '#1f2937', border: 'none', borderRadius: '8px', color: '#fff' }}
+                contentStyle={{ backgroundColor: theme === 'dark' ? '#1f2937' : '#ffffff', border: 'none', borderRadius: '8px', color: theme === 'dark' ? '#fff' : '#000', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)' }}
               />
             </PieChart>
           </ResponsiveContainer>
@@ -233,11 +236,11 @@ export function Dashboard() {
                     </div>
                     <div>
                       <p className="font-medium text-gray-900 dark:text-white">{t.description || t.category}</p>
-                      <p className="text-xs text-gray-500 dark:text-gray-400">{format(new Date(t.date), 'dd/MM/yyyy')}</p>
+                      <p className="text-xs text-gray-500 dark:text-gray-400">{t.date ? format(new Date(t.date), 'dd/MM/yyyy') : ''}</p>
                     </div>
                   </div>
                   <span className={`font-semibold ${t.type === 'income' ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
-                    {t.type === 'income' ? '+' : '-'}{t.amount.toLocaleString('vi-VN')} ₫
+                    {t.type === 'income' ? '+' : '-'}{(t.amount || 0).toLocaleString('vi-VN')} ₫
                   </span>
                 </div>
               ))}
@@ -260,7 +263,7 @@ export function Dashboard() {
                   <div className="flex-1">
                     <p className="font-medium text-gray-900 dark:text-white">{e.title}</p>
                     <p className="text-xs text-gray-500 dark:text-gray-400">
-                      {format(new Date(e.startDate), 'HH:mm')} - {format(new Date(e.endDate), 'HH:mm')}
+                      {e.startDate ? format(new Date(e.startDate), 'HH:mm') : ''} - {e.endDate ? format(new Date(e.endDate), 'HH:mm') : ''}
                     </p>
                   </div>
                 </div>
@@ -297,7 +300,7 @@ export function Dashboard() {
             <h3 className="font-semibold text-gray-900 dark:text-white">Đầu tư</h3>
           </div>
           <p className="text-2xl font-bold text-gray-900 dark:text-white">
-            {investments.reduce((sum, i) => sum + (i.quantity * i.currentPrice), 0).toLocaleString('vi-VN')} ₫
+            {investments.reduce((sum, i) => sum + ((i.quantity || 0) * (i.currentPrice || 0)), 0).toLocaleString('vi-VN')} ₫
           </p>
           <p className="text-sm text-gray-500 dark:text-gray-400">{investments.length} tài sản</p>
         </div>
@@ -308,7 +311,7 @@ export function Dashboard() {
             <h3 className="font-semibold text-gray-900 dark:text-white">Quỹ tiết kiệm</h3>
           </div>
           <p className="text-2xl font-bold text-gray-900 dark:text-white">
-            {savingsGoals.reduce((sum, g) => sum + g.current, 0).toLocaleString('vi-VN')} ₫
+            {savingsGoals.reduce((sum, g) => sum + (g.current || 0), 0).toLocaleString('vi-VN')} ₫
           </p>
           <p className="text-sm text-gray-500 dark:text-gray-400">{savingsGoals.length} mục tiêu</p>
         </div>
