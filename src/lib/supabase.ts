@@ -15,7 +15,6 @@ export const supabase: SupabaseClient = createClient(
 
 export type { Session, SupabaseUser };
 
-// --- AUTH FUNCTIONS ---
 export const signUp = async (email: string, password: string, fullName: string) => {
   if (!isSupabaseConfigured()) throw new Error('SUPABASE_NOT_CONFIGURED');
   const { data, error } = await supabase.auth.signUp({ email, password, options: { data: { full_name: fullName } } });
@@ -51,9 +50,8 @@ export const onAuthStateChange = (callback: (event: string, session: Session | n
   return supabase.auth.onAuthStateChange(callback);
 };
 
-// ==================== BỘ PHIÊN DỊCH FRONTEND <-> DATABASE ====================
+// ==================== BỘ PHIÊN DỊCH VÀ ÉP KIỂU ====================
 
-// 1. Dịch từ React (camelCase) sang Supabase (snake_case)
 function toDbFormat(tableName: string, data: any) {
   const dbData = { ...data };
   if (dbData.userId) { dbData.user_id = dbData.userId; delete dbData.userId; }
@@ -73,7 +71,6 @@ function toDbFormat(tableName: string, data: any) {
     }
   }
 
-  // Xử lý các bảng có schema đặc thù
   if (tableName === 'investments' && dbData.avgPrice !== undefined) {
     dbData.buy_price = dbData.avgPrice; delete dbData.avgPrice;
   }
@@ -85,7 +82,7 @@ function toDbFormat(tableName: string, data: any) {
     if (dbData.locked !== undefined) { dbData.is_private = dbData.locked; delete dbData.locked; }
   }
   if (tableName === 'tasks' && dbData.assignee !== undefined) {
-    delete dbData.assignee; // Bỏ cột không tồn tại trong DB
+    delete dbData.assignee; 
   }
   if (tableName === 'events') {
     if (dbData.start_date) {
@@ -102,10 +99,12 @@ function toDbFormat(tableName: string, data: any) {
     if (dbData.isTask !== undefined) delete dbData.isTask;
   }
 
+  // Chống lỗi array rỗng bị ép thành null trên Supabase
+  if (tableName === 'tasks' && !dbData.subtasks) dbData.subtasks = [];
+
   return dbData;
 }
 
-// 2. Dịch ngược từ Supabase (snake_case) về React (camelCase)
 function fromDbFormat(tableName: string, dbData: any) {
   const obj = { ...dbData, userId: dbData.user_id };
   delete obj.user_id;
@@ -140,15 +139,30 @@ function fromDbFormat(tableName: string, dbData: any) {
     obj.endDate = obj.end_time ? `${obj.date}T${obj.end_time}` : obj.date;
   }
 
+  // --- VÁ LỖI CỐT LÕI: ÉP TẤT CẢ DECIMAL SANG SỐ ---
+  const numberFields = ['amount', 'limit', 'spent', 'quantity', 'avgPrice', 'currentPrice', 'target', 'current', 'estimatedHours', 'weight', 'sleepHours', 'targetPerDay'];
+  for (const field of numberFields) {
+    if (obj[field] !== undefined && obj[field] !== null) {
+      obj[field] = Number(obj[field]);
+    }
+  }
+
+  // --- BỌC THÉP MẢNG: CHỐNG LỖI SUBTASKS VÀ MAP ---
+  if (tableName === 'tasks') obj.subtasks = obj.subtasks || [];
+  if (tableName === 'transactions') obj.tags = obj.tags || [];
+  if (tableName === 'habits') obj.completedDates = obj.completedDates || [];
+  if (tableName === 'activities') obj.logs = obj.logs || [];
+  if (tableName === 'journal') {
+    obj.completedHabits = obj.completedHabits || [];
+    obj.attachments = obj.attachments || [];
+  }
+
   return obj;
 }
-
-// ==================== DATABASE OPERATIONS ====================
 
 export async function fetchUserData<T>(tableName: string, userId: string, dateColumn?: string, daysLimit: number = 30): Promise<T[]> {
   let query = supabase.from(tableName).select('*').eq('user_id', userId);
 
-  // Tự động dịch tên cột ngày tháng trước khi lọc
   let dbDateColumn = dateColumn;
   if (dateColumn === 'startDate') dbDateColumn = 'start_date';
   if (dateColumn === 'dueDate') dbDateColumn = 'due_date';
@@ -167,50 +181,38 @@ export async function fetchUserData<T>(tableName: string, userId: string, dateCo
     return [];
   }
 
-  // Dịch dữ liệu trước khi ném về cho React
   return data.map((item: any) => fromDbFormat(tableName, item)) as T[];
 }
 
 export async function insertData(tableName: string, data: any) {
   const dbData = toDbFormat(tableName, data);
   const { error } = await supabase.from(tableName).insert(dbData);
-  if (error) { 
-    console.error(`❌ Lỗi thêm ${tableName}:`, error); 
-    throw error; // Ép văng lỗi để React Query phát hiện được
-  }
+  if (error) throw error; 
 }
 
 export async function updateData(tableName: string, id: string, data: any) {
   const dbData = toDbFormat(tableName, data);
   const { error } = await supabase.from(tableName).update(dbData).eq('id', id);
-  if (error) { 
-    console.error(`❌ Lỗi cập nhật ${tableName}:`, error); 
-    throw error; 
-  }
+  if (error) throw error; 
 }
 
 export async function deleteData(table: string, id: string): Promise<boolean> {
   if (!isSupabaseConfigured()) return false;
   const { error } = await supabase.from(table).delete().eq('id', id);
-  if (error) { 
-    console.error(`❌ Lỗi xóa ${table}:`, error); 
-    throw error; 
-  }
+  if (error) throw error; 
   return true;
 }
 
-// Fetch user profile
 export async function fetchUserProfile(userId: string) {
   if (!isSupabaseConfigured()) return null;
   const { data, error } = await supabase.from('profiles').select('*').eq('id', userId).single();
-  if (error) { console.error('Error fetching profile:', error); return null; }
+  if (error) return null;
   return data;
 }
 
-// Update user profile
 export async function updateUserProfile(userId: string, profile: Record<string, unknown>) {
   if (!isSupabaseConfigured()) return null;
   const { data, error } = await supabase.from('profiles').upsert({ id: userId, ...profile }).select().single();
-  if (error) { console.error('Error updating profile:', error); return null; }
+  if (error) return null;
   return data;
 }
