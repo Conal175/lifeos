@@ -129,8 +129,8 @@ export async function fetchUserData<T>(
   const { data: { session } } = await supabase.auth.getSession();
   if (!session?.user) return [];
 
-  let query = supabase.from(tableName).select('*').eq('userId', session.user.id);
-
+let query = supabase.from(tableName).select('*').eq('user_id', session.user.id);
+  
   // Nếu truyền vào cột ngày tháng, chỉ lấy dữ liệu trong khoảng X ngày gần nhất
   if (dateColumn) {
     const pastDate = new Date();
