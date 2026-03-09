@@ -65,10 +65,24 @@ export function CalendarPage() {
   const weekDays = eachDayOfInterval({ start: startOfWeek(currentDate, { weekStartsOn: 1 }), end: addDays(startOfWeek(currentDate, { weekStartsOn: 1 }), 6) });
   const hours = Array.from({ length: 24 }, (_, i) => i);
 
-  // ĐÃ KHÔI PHỤC: Đồng bộ Tasks lên Lịch
-  const taskEvents = useMemo(() => tasks.filter(t => t.dueDate && !t.completed).map(t => ({
-    id: `task-${t.id}`, title: `✓ ${t.title}`, description: '', startDate: t.dueDate, endDate: t.dueDate, color: '#6366f1', isTask: true, taskId: t.id,
-  })), [tasks]);
+  // ĐÃ NÂNG CẤP: Quét và hiển thị cả Task mẹ lẫn Subtask lên lịch
+  const taskEvents = useMemo(() => {
+    const formatted: any[] = [];
+    tasks.forEach(t => {
+      if (!t.completed && t.dueDate) {
+        formatted.push({ id: `task-${t.id}`, title: `✓ ${t.title}`, description: t.description || '', startDate: t.dueDate, endDate: t.dueDate, color: '#6366f1', isTask: true, taskId: t.id });
+      }
+      if (t.subtasks && t.subtasks.length > 0) {
+        t.subtasks.forEach(s => {
+          if (!s.completed && s.dueDate) {
+             formatted.push({ id: `subtask-${t.id}-${s.id}`, title: `↳ ${s.title} (${t.title})`, description: '', startDate: s.dueDate, endDate: s.dueDate, color: '#8b5cf6', isTask: true, taskId: t.id });
+          }
+        });
+      }
+    });
+    return formatted;
+  }, [tasks]);
+
   const allEvents = [...events, ...taskEvents];
 
   const getEventsForDate = (date: Date) => allEvents.filter(e => e.startDate.startsWith(format(date, 'yyyy-MM-dd')));
