@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
+import { useTableData } from '../hooks/useData'; // <-- ĐÃ THÊM REACT QUERY
+import { Notification } from '../types';         // <-- ĐÃ THÊM KIỂU DỮ LIỆU
 import {
   LayoutDashboard, Wallet, CheckSquare,
   BookOpen, FileBarChart, Settings, Bell,
@@ -53,8 +55,12 @@ const standaloneItems2 = [
 ];
 
 export function Layout({ children }: { children: React.ReactNode }) {
-  // ĐÃ BỔ SUNG toggleTheme VÀO ĐÂY ĐỂ TRÁNH LỖI REFERENCE ERROR
-  const { user, logout, theme, toggleTheme, notifications, language, setLanguage } = useApp();
+  // Chỉ lấy các cài đặt từ AppContext
+  const { user, logout, theme, toggleTheme, language, setLanguage } = useApp();
+  
+  // Dùng React Query tự động kéo Thông báo về (Gắn = [] để chống lỗi)
+  const { data: notifications = [] } = useTableData<Notification>('notifications');
+
   const location = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
@@ -67,6 +73,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
     return set;
   });
 
+  // Đếm số thông báo (Bây giờ mảng luôn có giá trị nên sẽ không bao giờ lỗi)
   const unreadCount = notifications.filter(n => !n.read).length;
 
   const avatars = ['👤', '👨', '👩', '🧑', '👨‍💼', '👩‍💼'];
@@ -294,6 +301,26 @@ export function Layout({ children }: { children: React.ReactNode }) {
         </div>
       </aside>
 
+      {/* Desktop Header */}
+      <header className="hidden lg:flex items-center justify-end p-4 sticky top-0 bg-gray-50/80 dark:bg-gray-900/80 backdrop-blur-sm z-30">
+        <div className="flex items-center gap-3">
+          <button onClick={toggleTheme} className="p-2.5 hover:bg-white dark:hover:bg-gray-800 rounded-xl shadow-sm border border-transparent dark:border-gray-700 transition-all text-gray-600 dark:text-gray-300">
+            {theme === 'light' ? <Moon className="w-5 h-5" /> : <Sun className="w-5 h-5" />}
+          </button>
+          
+          <div className="relative">
+            <button onClick={() => setShowNotifications(!showNotifications)} className="p-2.5 bg-white dark:bg-gray-800 rounded-xl shadow-sm border dark:border-gray-700 text-gray-600 dark:text-gray-300 relative transition-all hover:border-indigo-500">
+              <Bell className="w-5 h-5" />
+              {unreadCount > 0 && (
+                <span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white text-xs font-bold rounded-full flex items-center justify-center border-2 border-white dark:border-gray-800 shadow-sm">
+                  {unreadCount}
+                </span>
+              )}
+            </button>
+          </div>
+        </div>
+      </header>
+
       {/* Notifications Dropdown */}
       {showNotifications && (
         <>
@@ -330,7 +357,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
       )}
 
       {/* Main Content */}
-      <main className="lg:ml-64 min-h-screen">
+      <main className="lg:ml-64 min-h-screen pb-20 lg:pb-0">
         {children}
       </main>
     </div>
