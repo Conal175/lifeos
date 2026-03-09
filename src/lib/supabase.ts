@@ -121,20 +121,31 @@ export const onAuthStateChange = (callback: (event: string, session: Session | n
 // ==================== DATABASE OPERATIONS ====================
 
 // Generic fetch function with RLS (Row Level Security)
-export async function fetchUserData<T>(table: string): Promise<T[]> {
-  if (!isSupabaseConfigured()) return [];
-  
-  const { data, error } = await supabase
-    .from(table)
-    .select('*')
-    .order('created_at', { ascending: false });
-  
-  if (error) {
-    console.error(`Error fetching ${table}:`, error);
-    return [];
+export async function fetchUserData<T>(
+  tableName: string, 
+  dateColumn?: string, 
+  daysLimit: number = 30
+): Promise<T[]> {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.user) return [];
+
+  let query = supabase.from(tableName).select('*').eq('userId', session.user.id);
+
+  // Nếu truyền vào cột ngày tháng, chỉ lấy dữ liệu trong khoảng X ngày gần nhất
+  if (dateColumn) {
+    const pastDate = new Date();
+    pastDate.setDate(pastDate.getDate() - daysLimit);
+    const dateString = pastDate.toISOString().split('T')[0]; // Format YYYY-MM-DD
+    
+    query = query.gte(dateColumn, dateString);
   }
-  
-  return (data || []) as T[];
+
+  const { data, error } = await query;
+  if (error) {
+    console.error(`Lỗi tải bảng ${tableName}:`, error);
+    throw error;
+  }
+  return data as T[];
 }
 
 // Generic insert function
