@@ -157,40 +157,25 @@ export async function fetchUserData<T>(
 }
 
 // Generic insert function
-export async function insertData<T extends object>(table: string, item: T): Promise<T | null> {
-  if (!isSupabaseConfigured()) return null;
-  
-  const { data, error } = await supabase
-    .from(table)
-    .insert([item])
-    .select()
-    .single();
-  
-  if (error) {
-    console.error(`Error inserting into ${table}:`, error);
-    return null;
+export async function insertData(tableName: string, data: any) {
+  const dbData = { ...data };
+  // Dịch userId -> user_id trước khi lưu vào Supabase
+  if (dbData.userId) {
+    dbData.user_id = dbData.userId;
+    delete dbData.userId;
   }
-  
-  return data as T;
+  const { error } = await supabase.from(tableName).insert(dbData);
+  if (error) console.error(`❌ Lỗi thêm ${tableName}:`, error);
 }
 
-// Generic update function
-export async function updateData<T extends object>(table: string, id: string, updates: Partial<T>): Promise<T | null> {
-  if (!isSupabaseConfigured()) return null;
-  
-  const { data, error } = await supabase
-    .from(table)
-    .update(updates)
-    .eq('id', id)
-    .select()
-    .single();
-  
-  if (error) {
-    console.error(`Error updating ${table}:`, error);
-    return null;
+export async function updateData(tableName: string, id: string, data: any) {
+  const dbData = { ...data };
+  if (dbData.userId) {
+    dbData.user_id = dbData.userId;
+    delete dbData.userId;
   }
-  
-  return data as T;
+  const { error } = await supabase.from(tableName).update(dbData).eq('id', id);
+  if (error) console.error(`❌ Lỗi cập nhật ${tableName}:`, error);
 }
 
 // Generic delete function
