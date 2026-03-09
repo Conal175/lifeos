@@ -127,8 +127,6 @@ export async function fetchUserData<T>(
   dateColumn?: string, 
   daysLimit: number = 30
 ): Promise<T[]> {
-  // Đã xóa lệnh gọi session làm nghẽn mạng ở đây
-
   let query = supabase.from(tableName).select('*').eq('user_id', userId);
 
   // Lọc theo ngày để tăng tốc
@@ -154,15 +152,7 @@ export async function fetchUserData<T>(
 
   return mappedData as T[];
 }
-  // 3. Dịch ngược user_id về lại userId cho giao diện React hiểu
-  const mappedData = data.map((item: any) => {
-    const newItem = { ...item, userId: item.user_id };
-    delete newItem.user_id;
-    return newItem;
-  });
 
-  return mappedData as T[];
-}
 // Generic insert function
 export async function insertData(tableName: string, data: any) {
   const dbData = { ...data };
