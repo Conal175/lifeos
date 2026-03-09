@@ -53,6 +53,7 @@ const standaloneItems2 = [
 ];
 
 export function Layout({ children }: { children: React.ReactNode }) {
+  // ĐÃ BỔ SUNG toggleTheme VÀO ĐÂY ĐỂ TRÁNH LỖI REFERENCE ERROR
   const { user, logout, theme, toggleTheme, notifications, language, setLanguage } = useApp();
   const location = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(false);
