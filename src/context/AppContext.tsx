@@ -28,43 +28,62 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const fetchedUserId = useRef<string | null>(null);
 
   useEffect(() => {
-    let timer: any;
-    if (isLoading) {
-      timer = setTimeout(async () => {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (session?.user && !user) {
-          setUser({ id: session.user.id, email: session.user.email || '', name: session.user.user_metadata?.full_name || 'Người dùng', avatar: 0, notifications: { email: true, push: true, reminders: true }, settings: { theme: 'light', language: 'vi', currency: 'VND', fiscalYearStart: 1 } });
-        }
-        setIsLoading(false);
-      }, 5000); 
-    }
-    return () => clearTimeout(timer);
-  }, [isLoading, user]);
+    let isMounted = true;
 
-  useEffect(() => {
-    const { data: { subscription } } = onAuthStateChange(async (event, session) => {
-      if (session?.user) {
-        if (fetchedUserId.current === session.user.id) return;
-        setIsLoading(true);
-        fetchedUserId.current = session.user.id; 
-        
-        try {
-          const profile = await fetchUserProfile(session.user.id);
+    // Hàm chuyên dụng tải Profile người dùng
+    const loadProfile = async (sessionUser: SupabaseUser) => {
+      if (fetchedUserId.current === sessionUser.id) return;
+      setIsLoading(true);
+      fetchedUserId.current = sessionUser.id;
+
+      try {
+        const profile = await fetchUserProfile(sessionUser.id);
+        if (isMounted) {
           const loadedUser: User = {
-            id: session.user.id, email: session.user.email || '', name: profile?.full_name || session.user.user_metadata?.full_name || '', avatar: profile?.avatar || 0,
+            id: sessionUser.id,
+            email: sessionUser.email || '',
+            name: profile?.full_name || sessionUser.user_metadata?.full_name || '',
+            avatar: profile?.avatar || 0,
             notifications: profile?.notifications || { email: true, push: true, reminders: true },
             settings: profile?.settings || { theme: 'light', language: 'vi', currency: 'VND', fiscalYearStart: 1 },
           };
           setUser(loadedUser);
           setTheme(loadedUser.settings.theme);
           setLanguageState(loadedUser.settings.language);
-        } catch (error) { console.error('Lỗi tải Profile:', error); } finally { setIsLoading(false); }
+        }
+      } catch (error) {
+        console.error('Lỗi tải Profile:', error);
+      } finally {
+        if (isMounted) setIsLoading(false);
+      }
+    };
 
-      } else if (event === 'SIGNED_OUT') {
-        setUser(null); fetchedUserId.current = null; setIsLoading(false);
+    // 1. TẢI TRỰC TIẾP KHÔNG CHỜ ĐỢI (Loại bỏ hoàn toàn setTimeout 5 giây)
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user) {
+        loadProfile(session.user);
+      } else {
+        if (isMounted) setIsLoading(false); // Nếu chưa đăng nhập, mở khóa màn hình ngay
       }
     });
-    return () => subscription.unsubscribe();
+
+    // 2. LẮNG NGHE THAY ĐỔI THEO THỜI GIAN THỰC
+    const { data: { subscription } } = onAuthStateChange((event, session) => {
+      if (session?.user) {
+        loadProfile(session.user);
+      } else {
+        if (isMounted) {
+          setUser(null);
+          fetchedUserId.current = null;
+          setIsLoading(false);
+        }
+      }
+    });
+
+    return () => {
+      isMounted = false;
+      subscription.unsubscribe();
+    };
   }, []);
 
   useEffect(() => { document.documentElement.classList.toggle('dark', theme === 'dark'); }, [theme]);
