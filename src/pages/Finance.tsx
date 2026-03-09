@@ -6,7 +6,6 @@ import { Plus, Search, ArrowUpRight, ArrowDownRight, Trash2, Edit2, X, Filter, C
 import { format, startOfDay, endOfDay, startOfWeek, endOfWeek, startOfMonth, endOfMonth, startOfYear, endOfYear, isWithinInterval, parseISO } from 'date-fns';
 import { vi } from 'date-fns/locale';
 
-const defaultCategories = ['Lương', 'Kinh doanh', 'Đầu tư', 'Ăn uống', 'Mua sắm', 'Di chuyển', 'Giải trí', 'Y tế', 'Học tập', 'Khác'];
 type DateFilterType = 'all' | 'today' | 'week' | 'month' | 'year' | 'custom';
 
 export function Finance() {
@@ -16,10 +15,17 @@ export function Finance() {
   
   const isLoading = loadT || loadB;
 
-  // TỰ ĐỘNG GỘP DANH MỤC MẶC ĐỊNH VÀ DANH MỤC TỪ NGÂN SÁCH
+  // ĐÃ SỬA CHUẨN 100%: Quét toàn bộ Ngân sách và xóa sạch các danh mục mẫu (như Lương, Ăn uống)
   const categories = useMemo(() => {
-    const budgetCategories = budgets.map(b => b.category).filter(Boolean);
-    return Array.from(new Set([...defaultCategories, ...budgetCategories]));
+    // Lấy danh sách tên Ngân sách (ưu tiên category, nếu không có thì lấy name)
+    const budgetCategories = budgets.map(b => b.category || b.name).filter(Boolean);
+    const uniqueCategories = Array.from(new Set(budgetCategories));
+    
+    // Nếu chưa tạo Ngân sách nào, tự động tạo 1 mục tên là "Chưa phân loại"
+    if (uniqueCategories.length === 0) {
+      return ['Chưa phân loại'];
+    }
+    return uniqueCategories;
   }, [budgets]);
 
   const [showModal, setShowModal] = useState(false);
@@ -37,7 +43,7 @@ export function Finance() {
 
   const [formData, setFormData] = useState({
     type: 'expense' as 'income' | 'expense',
-    amount: '', category: categories[3], description: '', tags: '',
+    amount: '', category: categories[0] || 'Chưa phân loại', description: '', tags: '',
     date: new Date().toISOString().split('T')[0]
   });
 
@@ -64,7 +70,7 @@ export function Finance() {
     if (typeFilter !== 'all') result = result.filter(t => t.type === typeFilter);
     if (searchTerm) {
       const term = searchTerm.toLowerCase();
-      result = result.filter(t => (t.description || '').toLowerCase().includes(term) || t.category.toLowerCase().includes(term) || t.tags?.some(tag => tag.toLowerCase().includes(term)));
+      result = result.filter(t => t.description?.toLowerCase().includes(term) || t.category.toLowerCase().includes(term) || t.tags?.some(tag => tag.toLowerCase().includes(term)));
     }
     const dateRange = getDateRange(dateFilter);
     if (dateRange) result = result.filter(t => isWithinInterval(parseISO(t.date), dateRange));
@@ -84,15 +90,28 @@ export function Finance() {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const tagsArray = formData.tags.split(',').map(t => t.trim()).filter(t => t);
-    const txData = { type: formData.type, amount: parseFloat(formData.amount), category: formData.category, description: formData.description, tags: tagsArray, date: formData.date };
+    const txData = {
+      type: formData.type, amount: parseFloat(formData.amount), category: formData.category,
+      description: formData.description, tags: tagsArray, date: formData.date
+    };
 
-    if (editingTransaction) { updateRecord({ id: editingTransaction, data: txData }); } 
-    else { addRecord({ ...txData, userId: user?.id }); }
+    if (editingTransaction) {
+      updateRecord({ id: editingTransaction, data: txData });
+    } else {
+      addRecord({ ...txData, userId: user?.id });
+    }
     resetForm(); setShowModal(false);
   };
 
-  const resetForm = () => { setFormData({ type: 'expense', amount: '', category: categories[3], description: '', tags: '', date: new Date().toISOString().split('T')[0] }); setEditingTransaction(null); };
-  const resetFilters = () => { setTypeFilter('all'); setSearchTerm(''); setDateFilter('all'); setCustomDateFrom(''); setCustomDateTo(''); setSelectedCategories([]); setSelectedTags([]); setSortBy('date'); setSortOrder('desc'); };
+  const resetForm = () => {
+    // Tự động gán category bằng Ngân sách đầu tiên tìm thấy
+    setFormData({ type: 'expense', amount: '', category: categories[0] || 'Chưa phân loại', description: '', tags: '', date: new Date().toISOString().split('T')[0] });
+    setEditingTransaction(null);
+  };
+
+  const resetFilters = () => {
+    setTypeFilter('all'); setSearchTerm(''); setDateFilter('all'); setCustomDateFrom(''); setCustomDateTo(''); setSelectedCategories([]); setSelectedTags([]); setSortBy('date'); setSortOrder('desc');
+  };
 
   const handleEdit = (transaction: Transaction) => {
     setFormData({ type: transaction.type, amount: transaction.amount.toString(), category: transaction.category, description: transaction.description || '', tags: transaction.tags?.join(', ') || '', date: transaction.date.split('T')[0] });
@@ -135,14 +154,14 @@ export function Finance() {
         </div>
       </div>
 
-      {/* Search & Filter Toggle */}
+      {/* Search & Filter */}
       <div className="flex flex-col md:flex-row gap-4">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
           <input type="text" placeholder="Tìm kiếm..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full pl-10 pr-4 py-3 border dark:border-gray-600 rounded-xl focus:ring-2 focus:ring-indigo-500 dark:bg-gray-800 dark:text-white" />
         </div>
         <button onClick={() => setShowFilters(!showFilters)} className={`flex items-center gap-2 px-4 py-3 rounded-xl font-medium transition-all ${showFilters || activeFiltersCount > 0 ? 'bg-indigo-600 text-white' : 'bg-white dark:bg-gray-800 border dark:border-gray-600 text-gray-700 dark:text-gray-300'}`}>
-          <Filter className="w-5 h-5" /> Bộ lọc {activeFiltersCount > 0 && <span className="bg-white text-indigo-600 px-2 py-0.5 rounded-full text-xs font-bold">{activeFiltersCount}</span>}
+          <Filter className="w-5 h-5" /> Bộ lọc nâng cao {activeFiltersCount > 0 && <span className="bg-white text-indigo-600 px-2 py-0.5 rounded-full text-xs font-bold">{activeFiltersCount}</span>}
         </button>
       </div>
 
@@ -168,14 +187,14 @@ export function Finance() {
                 filteredTransactions.map(t => (
                   <tr key={t.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
                     <td className="px-4 py-3 text-sm font-medium dark:text-white">{format(new Date(t.date), 'dd/MM/yyyy')}</td>
-                    <td className="px-4 py-3"><span className={`inline-flex px-2 py-1 rounded-full text-xs font-semibold ${t.type === 'income' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>{t.type === 'income' ? 'Thu' : 'Chi'}</span></td>
+                    <td className="px-4 py-3"><span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-semibold ${t.type === 'income' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>{t.type === 'income' ? 'Thu' : 'Chi'}</span></td>
                     <td className="px-4 py-3 text-sm dark:text-white">{t.category}</td>
                     <td className="px-4 py-3 text-sm dark:text-white truncate max-w-[200px]">{t.description || '-'}</td>
                     <td className="px-4 py-3 flex gap-1 flex-wrap">{t.tags?.map((tag, i) => <span key={i} className="px-2 py-0.5 bg-indigo-100 text-indigo-700 rounded text-xs">#{tag}</span>)}</td>
                     <td className={`px-4 py-3 text-sm font-bold text-right ${t.type === 'income' ? 'text-green-600' : 'text-red-600'}`}>{t.type === 'income' ? '+' : '-'}{t.amount.toLocaleString('vi-VN')} ₫</td>
                     <td className="px-4 py-3 text-right">
-                      <button onClick={() => handleEdit(t)} className="p-2"><Edit2 className="w-4 h-4 text-gray-500" /></button>
-                      <button onClick={() => deleteRecord(t.id)} className="p-2"><Trash2 className="w-4 h-4 text-red-500" /></button>
+                      <button onClick={() => handleEdit(t)} className="p-2 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg"><Edit2 className="w-4 h-4 text-gray-500" /></button>
+                      <button onClick={() => deleteRecord(t.id)} className="p-2 hover:bg-red-100 rounded-lg"><Trash2 className="w-4 h-4 text-red-500" /></button>
                     </td>
                   </tr>
                 ))
@@ -195,17 +214,22 @@ export function Finance() {
             </div>
             <form onSubmit={handleSubmit} className="p-4 space-y-4">
               <div className="flex gap-2">
-                <button type="button" onClick={() => setFormData({ ...formData, type: 'income' })} className={`flex-1 py-3 rounded-xl font-medium ${formData.type === 'income' ? 'bg-green-600 text-white' : 'bg-gray-100 dark:bg-gray-700'}`}>Thu nhập</button>
-                <button type="button" onClick={() => setFormData({ ...formData, type: 'expense' })} className={`flex-1 py-3 rounded-xl font-medium ${formData.type === 'expense' ? 'bg-red-600 text-white' : 'bg-gray-100 dark:bg-gray-700'}`}>Chi tiêu</button>
+                <button type="button" onClick={() => setFormData({ ...formData, type: 'income' })} className={`flex-1 py-3 rounded-xl font-medium ${formData.type === 'income' ? 'bg-green-600 text-white' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400'}`}>Thu nhập</button>
+                <button type="button" onClick={() => setFormData({ ...formData, type: 'expense' })} className={`flex-1 py-3 rounded-xl font-medium ${formData.type === 'expense' ? 'bg-red-600 text-white' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400'}`}>Chi tiêu</button>
               </div>
               <input type="number" required value={formData.amount} onChange={e => setFormData({ ...formData, amount: e.target.value })} placeholder="Số tiền *" className="w-full px-4 py-3 border dark:border-gray-600 rounded-xl dark:bg-gray-700 dark:text-white" />
+              
+              {/* SELECT BOX CHỈ HIỂN THỊ CÁC NGÂN SÁCH ĐÃ TẠO */}
               <select value={formData.category} onChange={e => setFormData({ ...formData, category: e.target.value })} className="w-full px-4 py-3 border dark:border-gray-600 rounded-xl dark:bg-gray-700 dark:text-white">
-                {categories.map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                {categories.map((cat, i) => (
+                  <option key={i} value={cat}>{cat}</option>
+                ))}
               </select>
+
               <input type="text" value={formData.description} onChange={e => setFormData({ ...formData, description: e.target.value })} placeholder="Mô tả..." className="w-full px-4 py-3 border dark:border-gray-600 rounded-xl dark:bg-gray-700 dark:text-white" />
               <input type="text" value={formData.tags} onChange={e => setFormData({ ...formData, tags: e.target.value })} placeholder="Tags (phẩy cách nhau)..." className="w-full px-4 py-3 border dark:border-gray-600 rounded-xl dark:bg-gray-700 dark:text-white" />
               <input type="date" required value={formData.date} onChange={e => setFormData({ ...formData, date: e.target.value })} className="w-full px-4 py-3 border dark:border-gray-600 rounded-xl dark:bg-gray-700 dark:text-white" />
-              <button type="submit" className="w-full bg-indigo-600 text-white py-3 rounded-xl font-semibold">{editingTransaction ? 'Cập nhật' : 'Thêm giao dịch'}</button>
+              <button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-3 rounded-xl font-semibold transition-colors">{editingTransaction ? 'Cập nhật' : 'Thêm giao dịch'}</button>
             </form>
           </div>
         </div>
