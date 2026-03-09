@@ -200,7 +200,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setTheme(loadedUser.settings.theme);
       setLanguageState(loadedUser.settings.language);
 
-      // TRUYỀN MÃ userId VÀO TỪNG BẢNG ĐỂ TRÁNH QUÁ TẢI SUPABASE
       const [ loadedTransactions, loadedTasks, loadedBudgets, loadedHabits ] = await Promise.all([
         fetchUserData<Transaction>('transactions', userId, 'date', 60), 
         fetchUserData<Task>('tasks', userId),
@@ -213,10 +212,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setBudgets(loadedBudgets);
       setHabits(loadedHabits);
 
-      // MỞ KHÓA DASHBOARD NGAY LẬP TỨC
       setIsLoading(false); 
 
-      // TẢI NGẦM CHẬM LẠI ĐỂ KHÔNG CHẾT MẠNG
       setTimeout(() => {
         Promise.all([
           fetchUserData<Debt>('debts', userId),
@@ -239,7 +236,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
             setNotifications(loadedNotifs);
             setActivities(loadedActivities);
         });
-      }, 1500); // Đợi 1.5 giây mới tải phụ
+      }, 1500); 
 
     } catch (error) {
       console.error('❌ Lỗi tải dữ liệu:', error);
@@ -283,6 +280,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if (updated.settings.language !== language) setLanguageState(updated.settings.language);
     }
   };
+
+  // -----------------------------------------------------------------
+  // ĐÂY LÀ 2 HÀM BỊ MẤT TRONG FILE CỦA BẠN - TÔI ĐÃ BỔ SUNG LẠI:
+  const toggleTheme = () => { 
+    const newTheme = theme === 'light' ? 'dark' : 'light'; 
+    setTheme(newTheme); 
+    if (user) updateUser({ settings: { ...user.settings, theme: newTheme } }); 
+  };
+  
+  const setLanguage = (lang: 'vi' | 'en' | 'zh') => { 
+    setLanguageState(lang); 
+    if (user) updateUser({ settings: { ...user.settings, language: lang } }); 
+  };
+  // -----------------------------------------------------------------
 
   const updateParentTaskStatus = (task: Task): Task => {
     if (task.subtasks.length === 0) return task;
