@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { useTableData } from '../hooks/useData';
 import { Activity, Habit, Goal } from '../types';
-import { Plus, Trash2, X, Flame, TrendingUp, Calendar, CheckCircle2, Target, ChevronRight } from 'lucide-react';
+import { Plus, Trash2, X, Flame, TrendingUp, Calendar, CheckCircle2, Target, ChevronRight, Edit2 } from 'lucide-react';
 import { format, subDays, differenceInDays, startOfMonth, endOfMonth, isSameDay } from 'date-fns';
 import { vi } from 'date-fns/locale';
 
@@ -28,7 +28,6 @@ export function SelfDevelopment() {
   const { user } = useApp();
   const { data: activities = [], isLoading: loadA, addRecord: addAct, updateRecord: updateAct, deleteRecord: delAct } = useTableData<Activity>('activities');
   const { data: habits = [], isLoading: loadH, addRecord: addHab, updateRecord: updateHab, deleteRecord: delHab } = useTableData<Habit>('habits');
-  // ĐÃ KHÔI PHỤC: Sử dụng bảng Goals đúng chuẩn
   const { data: goals = [], isLoading: loadG, addRecord: addGoal, updateRecord: updateGoal, deleteRecord: delGoal } = useTableData<Goal>('goals');
   
   const isLoading = loadA || loadH || loadG;
@@ -37,9 +36,12 @@ export function SelfDevelopment() {
   const [habitViewMode, setHabitViewMode] = useState<'grid' | 'horizontal'>('grid');
   const [showActivityModal, setShowActivityModal] = useState(false);
   const [showHabitModal, setShowHabitModal] = useState(false);
-  const [showGoalModal, setShowGoalModal] = useState(false);
-  const [showLogModal, setShowLogModal] = useState<string | null>(null);
   
+  // NÂNG CẤP: Quản lý trạng thái Sửa mục tiêu
+  const [showGoalModal, setShowGoalModal] = useState(false);
+  const [editingGoalId, setEditingGoalId] = useState<string | null>(null);
+
+  const [showLogModal, setShowLogModal] = useState<string | null>(null);
   const [logDate, setLogDate] = useState(format(new Date(), 'yyyy-MM-dd'));
   const [logValue, setLogValue] = useState('');
   const [logNote, setLogNote] = useState('');
@@ -55,12 +57,38 @@ export function SelfDevelopment() {
 
   const handleAddActivity = (e: React.FormEvent) => { e.preventDefault(); addAct({ ...activityForm, userId: user?.id, logs: [] }); setShowActivityModal(false); };
   const handleAddHabit = (e: React.FormEvent) => { e.preventDefault(); addHab({ ...habitForm, userId: user?.id, completedDates: [], streak: 0 }); setShowHabitModal(false); };
+  
+  // NÂNG CẤP TÍNH NĂNG THÊM/SỬA MỤC TIÊU
   const handleAddGoal = (e: React.FormEvent) => { 
     e.preventDefault(); 
     const mlList = goalForm.milestones.split('\n').filter(m => m.trim()).map((title, i) => ({ id: `m-${Date.now()}-${i}`, title: title.trim(), completed: false }));
-    addGoal({ title: goalForm.title, category: goalForm.category, deadline: goalForm.deadline, milestones: mlList, userId: user?.id }); 
+    
+    if (editingGoalId) {
+      const existingGoal = goals.find(g => g.id === editingGoalId);
+      // Giữ nguyên trạng thái completed của các mốc cũ nếu tên không đổi
+      const updatedMilestones = mlList.map(newM => {
+        const existingM = existingGoal?.milestones.find(m => m.title === newM.title);
+        return existingM ? existingM : newM;
+      });
+      updateGoal({ id: editingGoalId, data: { title: goalForm.title, category: goalForm.category, deadline: goalForm.deadline, milestones: updatedMilestones } });
+    } else {
+      addGoal({ title: goalForm.title, category: goalForm.category, deadline: goalForm.deadline, milestones: mlList, userId: user?.id }); 
+    }
+
     setGoalForm({ title: '', category: 'Cá nhân', deadline: format(new Date(Date.now() + 90 * 24 * 60 * 60 * 1000), 'yyyy-MM-dd'), milestones: '' });
+    setEditingGoalId(null);
     setShowGoalModal(false); 
+  };
+
+  const handleEditGoal = (goal: Goal) => {
+    setGoalForm({
+      title: goal.title,
+      category: goal.category || 'Cá nhân',
+      deadline: goal.deadline.split('T')[0],
+      milestones: goal.milestones.map(m => m.title).join('\n')
+    });
+    setEditingGoalId(goal.id);
+    setShowGoalModal(true);
   };
 
   const handleLog = () => {
@@ -124,7 +152,7 @@ export function SelfDevelopment() {
 
       {activeTab === 'goals' && (
         <div className="space-y-4">
-          <div className="flex justify-end"><button onClick={() => setShowGoalModal(true)} className="flex items-center gap-2 bg-gradient-to-r from-indigo-600 to-purple-600 text-white px-5 py-2.5 rounded-xl font-medium"><Plus className="w-5 h-5" /> Tạo mục tiêu</button></div>
+          <div className="flex justify-end"><button onClick={() => { setGoalForm({ title: '', category: 'Cá nhân', deadline: format(new Date(Date.now() + 90 * 24 * 60 * 60 * 1000), 'yyyy-MM-dd'), milestones: '' }); setEditingGoalId(null); setShowGoalModal(true); }} className="flex items-center gap-2 bg-gradient-to-r from-indigo-600 to-purple-600 text-white px-5 py-2.5 rounded-xl font-medium"><Plus className="w-5 h-5" /> Tạo mục tiêu</button></div>
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             {goals.map(goal => {
               const progress = goal.milestones.length > 0 ? Math.round((goal.milestones.filter(m => m.completed).length / goal.milestones.length) * 100) : 0;
@@ -133,10 +161,15 @@ export function SelfDevelopment() {
                 <div key={goal.id} className={`bg-white dark:bg-gray-800 rounded-2xl border dark:border-gray-700 overflow-hidden ${isCompleted ? 'ring-2 ring-green-500' : ''}`}>
                   <div className="p-4 border-b dark:border-gray-700 flex justify-between">
                     <div><h3 className="font-bold dark:text-white">{goal.title}</h3><span className="text-xs px-2 py-0.5 bg-indigo-100 text-indigo-700 rounded-full mt-1 inline-block">{goal.category}</span></div>
-                    <div className="flex gap-2"><div className="text-2xl font-bold" style={{ color: isCompleted ? '#22c55e' : '#6366f1' }}>{progress}%</div><button onClick={() => delGoal(goal.id)} className="p-1 text-red-400 hover:bg-red-50 rounded"><Trash2 className="w-4 h-4"/></button></div>
+                    <div className="flex items-center gap-2">
+                      <div className="text-2xl font-bold mr-2" style={{ color: isCompleted ? '#22c55e' : '#6366f1' }}>{progress}%</div>
+                      {/* NÚT CHỈNH SỬA Ở ĐÂY */}
+                      <button onClick={() => handleEditGoal(goal)} className="p-1 text-gray-500 hover:bg-gray-100 rounded transition-colors"><Edit2 className="w-4 h-4"/></button>
+                      <button onClick={() => delGoal(goal.id)} className="p-1 text-red-400 hover:bg-red-50 rounded transition-colors"><Trash2 className="w-4 h-4"/></button>
+                    </div>
                   </div>
                   <div className="w-full bg-gray-200 dark:bg-gray-700 h-2"><div className={`h-2 transition-all ${isCompleted ? 'bg-green-500' : 'bg-indigo-500'}`} style={{ width: `${progress}%` }} /></div>
-                  <div className="p-4 space-y-1.5">
+                  <div className="p-4 space-y-1.5 max-h-[250px] overflow-y-auto">
                     {goal.milestones.map((m, idx) => (
                       <label key={m.id} className="flex items-center gap-3 p-2 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg cursor-pointer">
                         <input type="checkbox" checked={m.completed} onChange={() => completeMilestone(goal.id, m.id)} className="w-4 h-4 rounded text-indigo-600" />
@@ -242,7 +275,7 @@ export function SelfDevelopment() {
 
       {/* Modals */}
       {showGoalModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50"><div className="bg-white dark:bg-gray-800 rounded-xl p-5 w-full max-w-md"><div className="flex justify-between mb-4"><h2 className="font-bold text-lg dark:text-white">Tạo mục tiêu</h2><button onClick={() => setShowGoalModal(false)}><X className="w-5 h-5"/></button></div><form onSubmit={handleAddGoal} className="space-y-3"><input type="text" value={goalForm.title} onChange={e => setGoalForm({...goalForm, title: e.target.value})} className="w-full p-2 border rounded dark:bg-gray-700 dark:text-white" required placeholder="Tên mục tiêu *" /><select value={goalForm.category} onChange={e => setGoalForm({...goalForm, category: e.target.value})} className="w-full p-2 border rounded dark:bg-gray-700 dark:text-white">{goalCategories.map(c => <option key={c} value={c}>{c}</option>)}</select><input type="date" value={goalForm.deadline} onChange={e => setGoalForm({...goalForm, deadline: e.target.value})} className="w-full p-2 border rounded dark:bg-gray-700 dark:text-white" required /><textarea value={goalForm.milestones} onChange={e => setGoalForm({...goalForm, milestones: e.target.value})} className="w-full p-2 border rounded dark:bg-gray-700 dark:text-white" rows={4} placeholder="Các cột mốc (mỗi dòng 1 mốc)&#10;Mốc 1&#10;Mốc 2" /><button type="submit" className="w-full py-2 bg-indigo-600 text-white rounded">Lưu mục tiêu</button></form></div></div>
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50"><div className="bg-white dark:bg-gray-800 rounded-xl p-5 w-full max-w-md"><div className="flex justify-between mb-4"><h2 className="font-bold text-lg dark:text-white">{editingGoalId ? 'Sửa mục tiêu' : 'Tạo mục tiêu'}</h2><button onClick={() => setShowGoalModal(false)}><X className="w-5 h-5"/></button></div><form onSubmit={handleAddGoal} className="space-y-3"><input type="text" value={goalForm.title} onChange={e => setGoalForm({...goalForm, title: e.target.value})} className="w-full p-2 border rounded dark:bg-gray-700 dark:text-white" required placeholder="Tên mục tiêu *" /><select value={goalForm.category} onChange={e => setGoalForm({...goalForm, category: e.target.value})} className="w-full p-2 border rounded dark:bg-gray-700 dark:text-white">{goalCategories.map(c => <option key={c} value={c}>{c}</option>)}</select><input type="date" value={goalForm.deadline} onChange={e => setGoalForm({...goalForm, deadline: e.target.value})} className="w-full p-2 border rounded dark:bg-gray-700 dark:text-white" required /><textarea value={goalForm.milestones} onChange={e => setGoalForm({...goalForm, milestones: e.target.value})} className="w-full p-2 border rounded dark:bg-gray-700 dark:text-white" rows={6} placeholder="Các cột mốc (mỗi dòng 1 mốc)&#10;Mốc 1&#10;Mốc 2" /><button type="submit" className="w-full py-3 mt-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-lg transition-colors">{editingGoalId ? 'Cập nhật mục tiêu' : 'Lưu mục tiêu'}</button></form></div></div>
       )}
 
       {showHabitModal && (
@@ -257,7 +290,7 @@ export function SelfDevelopment() {
         const activity = activities.find(a => a.id === showLogModal);
         if (!activity) return null;
         return (
-          <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50"><div className="bg-white dark:bg-gray-800 rounded-xl p-5 w-full max-w-sm"><h2 className="font-bold text-lg mb-4 dark:text-white">{activity.icon} Ghi nhận {activity.name}</h2><div className="space-y-4"><div><label className="block text-sm mb-1 dark:text-gray-300">Ngày</label><input type="date" value={logDate} onChange={e => setLogDate(e.target.value)} className="w-full p-2 border rounded dark:bg-gray-700 dark:text-white" /></div><div><label className="block text-sm mb-1 dark:text-gray-300">Giá trị ({activity.unit})</label><input type="number" value={logValue} onChange={e => setLogValue(e.target.value)} className="w-full p-2 border rounded text-lg font-bold text-center dark:bg-gray-700 dark:text-white" min={0} step="any" placeholder={`Mục tiêu: ${activity.targetPerDay}`} /></div><div><label className="block text-sm mb-1 dark:text-gray-300">Ghi chú</label><input type="text" value={logNote} onChange={e => setLogNote(e.target.value)} className="w-full p-2 border rounded dark:bg-gray-700 dark:text-white" /></div><div className="flex gap-2"><button onClick={() => { setShowLogModal(null); setLogValue(''); setLogNote(''); }} className="flex-1 p-2 border rounded">Hủy</button><button onClick={handleLog} className="flex-1 p-2 bg-indigo-600 text-white rounded">Lưu</button></div></div></div></div>
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50"><div className="bg-white dark:bg-gray-800 rounded-xl p-5 w-full max-w-sm"><h2 className="font-bold text-lg mb-4 dark:text-white">{activity.icon} Ghi nhận {activity.name}</h2><div className="space-y-4"><div><label className="block text-sm mb-1 dark:text-gray-300">Ngày</label><input type="date" value={logDate} onChange={e => setLogDate(e.target.value)} className="w-full p-2 border rounded dark:bg-gray-700 dark:text-white" /></div><div><label className="block text-sm mb-1 dark:text-gray-300">Giá trị ({activity.unit})</label><input type="number" value={logValue} onChange={e => setLogValue(e.target.value)} className="w-full p-2 border rounded text-lg font-bold text-center dark:bg-gray-700 dark:text-white" min={0} step="any" placeholder={`Mục tiêu: ${activity.targetPerDay}`} /></div><div><label className="block text-sm mb-1 dark:text-gray-300">Ghi chú</label><input type="text" value={logNote} onChange={e => setLogNote(e.target.value)} className="w-full p-2 border rounded dark:bg-gray-700 dark:text-white" /></div><div className="flex gap-2"><button onClick={() => { setShowLogModal(null); setLogValue(''); setLogNote(''); }} className="flex-1 p-2 border rounded hover:bg-gray-50">Hủy</button><button onClick={handleLog} className="flex-1 p-2 bg-indigo-600 hover:bg-indigo-700 transition-colors text-white rounded">Lưu</button></div></div></div></div>
         );
       })()}
     </div>
