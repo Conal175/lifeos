@@ -50,10 +50,10 @@ export function CalendarPage() {
   const [_selectedSlot, setSelectedSlot] = useState<FreeTimeSlot | null>(null);
   const [editingEventId, setEditingEventId] = useState<string | null>(null);
 
-  // ĐÃ NÂNG CẤP: State form quản lý thêm mảng recurringDays để lưu các Thứ trong tuần
+  // ĐÃ NÂNG CẤP: Thêm recurringEndDate để lưu ngày kết thúc lặp lại
   const [form, setForm] = useState({ 
     title: '', description: '', startDate: '', startTime: '09:00', endDate: '', endTime: '10:00', color: eventColors[0], 
-    recurring: '', recurringDays: [] as number[] 
+    recurring: '', recurringDays: [] as number[], recurringEndDate: '' 
   });
 
   const navigate = (dir: number) => {
@@ -85,7 +85,7 @@ export function CalendarPage() {
 
   const allEvents = [...events, ...taskEvents];
 
-  // ĐÃ NÂNG CẤP: Thuật toán dịch chuỗi weekly_custom
+  // ĐÃ NÂNG CẤP: Thuật toán lọc sự kiện lặp lại (Có giới hạn ngày kết thúc)
   const getEventsForDate = (targetDate: Date) => {
     const targetDateStr = format(targetDate, 'yyyy-MM-dd');
     
@@ -93,17 +93,33 @@ export function CalendarPage() {
       if (!e.startDate) return false;
       const eventStartDateStr = e.startDate.split('T')[0];
       
+      // Ngày gốc
       if (eventStartDateStr === targetDateStr) return true;
 
+      // Xử lý Lặp lại
       if (e.recurring && targetDateStr > eventStartDateStr) {
-        const eStart = new Date(eventStartDateStr);
-        if (e.recurring === 'daily') return true;
-        if (e.recurring === 'weekly' && targetDate.getDay() === eStart.getDay()) return true;
-        if (e.recurring === 'monthly' && targetDate.getDate() === eStart.getDate()) return true;
+        let recurringStr = e.recurring;
+        let recEndDate = '';
         
-        // Nhận diện ngày lặp tùy chọn
-        if (e.recurring.startsWith('weekly_custom:')) {
-          const selectedDays = e.recurring.split(':')[1].split(',').map(Number);
+        // Tách chuỗi nếu có chứa ngày kết thúc (ngăn cách bằng dấu |)
+        if (recurringStr.includes('|')) {
+          const parts = recurringStr.split('|');
+          recurringStr = parts[0];
+          recEndDate = parts[1];
+        }
+
+        // Bỏ qua nếu ngày đang xét vượt quá ngày kết thúc lặp lại
+        if (recEndDate && targetDateStr > recEndDate) {
+          return false;
+        }
+
+        const eStart = new Date(eventStartDateStr);
+        if (recurringStr === 'daily') return true;
+        if (recurringStr === 'weekly' && targetDate.getDay() === eStart.getDay()) return true;
+        if (recurringStr === 'monthly' && targetDate.getDate() === eStart.getDate()) return true;
+        
+        if (recurringStr.startsWith('weekly_custom:')) {
+          const selectedDays = recurringStr.split(':')[1].split(',').map(Number);
           if (selectedDays.includes(targetDate.getDay())) return true;
         }
       }
@@ -172,7 +188,7 @@ export function CalendarPage() {
   const totalFreeMinutes = useMemo(() => weekFreeSlots.reduce((total, day) => total + day.slots.reduce((dayTotal, slot) => dayTotal + slot.duration, 0), 0), [weekFreeSlots]);
 
   const closeModal = () => {
-    setForm({ title: '', description: '', startDate: '', startTime: '09:00', endDate: '', endTime: '10:00', color: eventColors[0], recurring: '', recurringDays: [] });
+    setForm({ title: '', description: '', startDate: '', startTime: '09:00', endDate: '', endTime: '10:00', color: eventColors[0], recurring: '', recurringDays: [], recurringEndDate: '' });
     setEditingEventId(null);
     setShowModal(false);
   };
@@ -180,11 +196,16 @@ export function CalendarPage() {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     
-    // ĐÃ NÂNG CẤP: Lưu chuỗi lặp tùy chỉnh
+    // Gắn chuỗi tùy chỉnh
     let finalRecurring = form.recurring;
     if (form.recurring === 'weekly_custom') {
       if (form.recurringDays.length === 0) finalRecurring = '';
       else finalRecurring = `weekly_custom:${form.recurringDays.join(',')}`;
+    }
+
+    // ĐÃ NÂNG CẤP: Nối ngày kết thúc lặp lại vào chuỗi recurring
+    if (finalRecurring && form.recurringEndDate) {
+      finalRecurring += `|${form.recurringEndDate}`;
     }
 
     const eventData = { 
@@ -216,7 +237,8 @@ export function CalendarPage() {
       endDate: format(d, 'yyyy-MM-dd'),
       startTime: `${startH.toString().padStart(2, '0')}:00`,
       endTime: `${Math.min(endH, 23).toString().padStart(2, '0')}:00`,
-      recurringDays: [d.getDay()] // Mặc định thứ hiện tại
+      recurringDays: [d.getDay()],
+      recurringEndDate: ''
     });
     setEditingEventId(null);
     setShowModal(true);
@@ -230,6 +252,15 @@ export function CalendarPage() {
 
     let recurringType = e.recurring || '';
     let recDays: number[] = [];
+    let recEndDate = '';
+
+    // ĐÃ NÂNG CẤP: Tách chuỗi để lấy ra cấu hình và ngày kết thúc
+    if (recurringType.includes('|')) {
+      const parts = recurringType.split('|');
+      recurringType = parts[0];
+      recEndDate = parts[1];
+    }
+
     if (recurringType.startsWith('weekly_custom:')) {
       recDays = recurringType.split(':')[1].split(',').map(Number);
       recurringType = 'weekly_custom';
@@ -243,8 +274,9 @@ export function CalendarPage() {
       endDate: endParts[0] || startParts[0],
       endTime: endParts[1]?.substring(0, 5) || '10:00',
       color: e.color,
-      recurring: recurringType,
-      recurringDays: recDays
+      recurring: recurringType as any,
+      recurringDays: recDays,
+      recurringEndDate: recEndDate
     });
     setEditingEventId(e.id);
     setShowModal(true);
@@ -308,6 +340,7 @@ export function CalendarPage() {
         </div>
       </div>
 
+      {/* --- CHẾ ĐỘ THÁNG --- */}
       {viewMode === 'month' && (
         <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border dark:border-gray-700 overflow-hidden">
           <div className="grid grid-cols-7 border-b dark:border-gray-700">{['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'].map(d => <div key={d} className="p-3 text-center text-sm font-semibold text-gray-500">{d}</div>)}</div>
@@ -337,6 +370,7 @@ export function CalendarPage() {
         </div>
       )}
 
+      {/* --- CHẾ ĐỘ TUẦN --- */}
       {viewMode === 'week' && (
         <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border dark:border-gray-700 overflow-hidden flex flex-col">
           <div className="grid grid-cols-[60px_repeat(7,1fr)] border-b dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50 sticky top-0 z-10">
@@ -404,6 +438,7 @@ export function CalendarPage() {
         </div>
       )}
 
+      {/* --- CHẾ ĐỘ NGÀY --- */}
       {viewMode === 'day' && (
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
           <div className="lg:col-span-3 bg-white dark:bg-gray-800 rounded-xl shadow-sm border dark:border-gray-700 overflow-hidden flex flex-col">
@@ -481,9 +516,10 @@ export function CalendarPage() {
         </div>
       )}
 
+      {/* --- MODAL THÊM / SỬA SỰ KIỆN --- */}
       {showModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white dark:bg-gray-800 rounded-2xl w-full max-w-md p-6 shadow-2xl animate-fadeIn">
+          <div className="bg-white dark:bg-gray-800 rounded-2xl w-full max-w-md p-6 shadow-2xl animate-fadeIn max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center mb-5">
               <h2 className="text-xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
                 <Plus className="w-6 h-6 text-indigo-600" /> {editingEventId ? 'Sửa sự kiện' : 'Thêm sự kiện'}
@@ -509,7 +545,7 @@ export function CalendarPage() {
                   <input type="time" value={form.endTime} onChange={e => setForm({ ...form, endTime: e.target.value })} className="w-full p-2 border dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white text-sm focus:ring-2 focus:ring-indigo-500" required />
                 </div>
 
-                {/* ĐÃ NÂNG CẤP: THIẾT LẬP LẶP LẠI TÙY CHỌN */}
+                {/* THIẾT LẬP LẶP LẠI */}
                 <div className="space-y-2 col-span-2 pt-2 border-t dark:border-gray-700">
                   <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider flex items-center gap-1"><Repeat className="w-3 h-3"/> Lặp lại sự kiện</label>
                   <select value={form.recurring} onChange={e => {
@@ -529,25 +565,27 @@ export function CalendarPage() {
                     <option value="monthly">Hằng tháng (Cùng ngày)</option>
                   </select>
 
-                  {/* Hiện Row chọn thứ khi chọn Tùy chọn thứ trong tuần */}
                   {form.recurring === 'weekly_custom' && (
                     <div className="flex gap-1 mt-2">
                        {[{ l: 'T2', v: 1 }, { l: 'T3', v: 2 }, { l: 'T4', v: 3 }, { l: 'T5', v: 4 }, { l: 'T6', v: 5 }, { l: 'T7', v: 6 }, { l: 'CN', v: 0 }].map(day => {
                            const isSelected = form.recurringDays.includes(day.v);
                            return (
-                               <button
-                                  key={day.v}
-                                  type="button"
-                                  onClick={() => {
+                               <button key={day.v} type="button" onClick={() => {
                                       const next = isSelected ? form.recurringDays.filter(d => d !== day.v) : [...form.recurringDays, day.v];
                                       setForm({...form, recurringDays: next});
-                                  }}
-                                  className={`flex-1 py-1.5 text-xs font-bold rounded-md transition-colors border ${isSelected ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm' : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700'}`}
-                               >
+                                  }} className={`flex-1 py-1.5 text-xs font-bold rounded-md transition-colors border ${isSelected ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm' : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700'}`}>
                                   {day.l}
                                </button>
                            )
                        })}
+                    </div>
+                  )}
+
+                  {/* ĐÃ NÂNG CẤP: CHỌN NGÀY KẾT THÚC LẶP LẠI */}
+                  {form.recurring && (
+                    <div className="mt-3 pt-2 border-t border-dashed dark:border-gray-700">
+                       <label className="block text-xs font-bold text-gray-500 mb-1">Lặp lại đến ngày (Tùy chọn)</label>
+                       <input type="date" value={form.recurringEndDate} onChange={e => setForm({...form, recurringEndDate: e.target.value})} min={form.startDate} className="w-full p-2 border dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white text-sm focus:ring-2 focus:ring-indigo-500" />
                     </div>
                   )}
                 </div>
