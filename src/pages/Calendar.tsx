@@ -3,7 +3,7 @@ import { useApp } from '../context/AppContext';
 import { useTableData } from '../hooks/useData';
 import { Event, Task } from '../types';
 import { Plus, X, ChevronLeft, ChevronRight, CheckCircle, Lightbulb, Clock, Zap, Coffee, Book, Dumbbell, Music, Code, Users, Phone, ShoppingBag, Utensils, Briefcase, Heart, Sparkles } from 'lucide-react';
-import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth, isSameDay, startOfWeek, endOfWeek, addMonths, subMonths, addWeeks, subWeeks, addDays, subDays, isToday, isTomorrow } from 'date-fns';
+import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth, isSameDay, startOfWeek, endOfWeek, addMonths, subMonths, addWeeks, subWeeks, addDays, subDays, isToday } from 'date-fns';
 import { vi } from 'date-fns/locale';
 
 type ViewMode = 'month' | 'week' | 'day';
@@ -13,20 +13,14 @@ const activitySuggestions = [
   { icon: Coffee, name: 'Uống cà phê & lập kế hoạch', duration: 30, timeRange: [6, 9], category: 'productivity', color: '#8b5cf6' },
   { icon: Dumbbell, name: 'Tập thể dục buổi sáng', duration: 60, timeRange: [6, 9], category: 'health', color: '#22c55e' },
   { icon: Book, name: 'Đọc sách 30 phút', duration: 30, timeRange: [6, 9], category: 'learning', color: '#3b82f6' },
-  { icon: Code, name: 'Deep work - Tập trung cao độ', duration: 120, timeRange: [9, 12], category: 'work', color: '#6366f1' },
-  { icon: Briefcase, name: 'Xử lý email & tin nhắn', duration: 30, timeRange: [9, 12], category: 'work', color: '#64748b' },
-  { icon: Phone, name: 'Gọi điện/Meeting', duration: 60, timeRange: [9, 12], category: 'work', color: '#f97316' },
+  { icon: Code, name: 'Deep work - Tập trung', duration: 120, timeRange: [9, 12], category: 'work', color: '#6366f1' },
+  { icon: Briefcase, name: 'Xử lý email', duration: 30, timeRange: [9, 12], category: 'work', color: '#64748b' },
   { icon: Utensils, name: 'Nghỉ trưa & ăn uống', duration: 60, timeRange: [12, 14], category: 'break', color: '#eab308' },
-  { icon: Music, name: 'Nghe nhạc thư giãn', duration: 30, timeRange: [12, 14], category: 'relax', color: '#ec4899' },
   { icon: Users, name: 'Họp nhóm/Brainstorm', duration: 60, timeRange: [14, 18], category: 'work', color: '#f43f5e' },
-  { icon: Code, name: 'Làm việc sáng tạo', duration: 90, timeRange: [14, 18], category: 'work', color: '#8b5cf6' },
   { icon: ShoppingBag, name: 'Đi chợ/Mua sắm', duration: 60, timeRange: [14, 18], category: 'errands', color: '#06b6d4' },
   { icon: Dumbbell, name: 'Tập gym buổi tối', duration: 90, timeRange: [18, 21], category: 'health', color: '#22c55e' },
   { icon: Heart, name: 'Thời gian gia đình', duration: 120, timeRange: [18, 21], category: 'personal', color: '#ec4899' },
-  { icon: Book, name: 'Học online/Khóa học', duration: 60, timeRange: [18, 21], category: 'learning', color: '#3b82f6' },
   { icon: Music, name: 'Giải trí/Xem phim', duration: 90, timeRange: [21, 23], category: 'relax', color: '#a855f7' },
-  { icon: Book, name: 'Đọc sách trước khi ngủ', duration: 30, timeRange: [21, 23], category: 'relax', color: '#6366f1' },
-  { icon: Sparkles, name: 'Thiền/Mindfulness', duration: 20, timeRange: [21, 23], category: 'health', color: '#14b8a6' },
 ];
 
 const quickTasks = [
@@ -34,11 +28,15 @@ const quickTasks = [
   { name: 'Dọn dẹp bàn làm việc', duration: 15, icon: '🧹' },
   { name: 'Uống nước & nghỉ mắt', duration: 10, icon: '💧' },
   { name: 'Ghi chú ý tưởng', duration: 10, icon: '💡' },
-  { name: 'Kiểm tra lịch ngày mai', duration: 10, icon: '📅' },
-  { name: 'Stretching nhẹ', duration: 10, icon: '🧘' },
 ];
 
 interface FreeTimeSlot { date: Date; startHour: number; endHour: number; duration: number; suggestions: typeof activitySuggestions; }
+
+// HẰNG SỐ RENDER LỊCH (1 giờ = 60px)
+const HOUR_HEIGHT = 60;
+const START_HOUR = 6;
+const END_HOUR = 23;
+const DISPLAY_HOURS = Array.from({ length: END_HOUR - START_HOUR + 1 }, (_, i) => i + START_HOUR);
 
 export function CalendarPage() {
   const { user } = useApp();
@@ -47,11 +45,10 @@ export function CalendarPage() {
   const isLoading = l1 || l2;
 
   const [currentDate, setCurrentDate] = useState(new Date());
-  const [viewMode, setViewMode] = useState<ViewMode>('month');
+  const [viewMode, setViewMode] = useState<ViewMode>('week');
   const [showModal, setShowModal] = useState(false);
   const [showSuggestions, setShowSuggestions] = useState(false);
-  const [_selectedDate, setSelectedDate] = useState<Date | null>(null);
-  const [selectedSlot, setSelectedSlot] = useState<FreeTimeSlot | null>(null);
+  const [_selectedSlot, setSelectedSlot] = useState<FreeTimeSlot | null>(null);
 
   const [form, setForm] = useState({ title: '', description: '', startDate: '', startTime: '09:00', endDate: '', endTime: '10:00', color: eventColors[0], recurring: '' as '' | 'daily' | 'weekly' | 'monthly' });
 
@@ -64,8 +61,8 @@ export function CalendarPage() {
   const weekStart = startOfWeek(currentDate, { weekStartsOn: 1 });
   const calendarDays = eachDayOfInterval({ start: startOfWeek(startOfMonth(currentDate), { weekStartsOn: 1 }), end: endOfWeek(endOfMonth(currentDate), { weekStartsOn: 1 }) });
   const weekDays = eachDayOfInterval({ start: weekStart, end: addDays(weekStart, 6) });
-  const hours = Array.from({ length: 24 }, (_, i) => i);
 
+  // Tích hợp Task và Subtask vào sự kiện
   const taskEvents = useMemo(() => {
     const formatted: any[] = [];
     tasks.forEach(t => {
@@ -87,6 +84,32 @@ export function CalendarPage() {
 
   const getEventsForDate = (date: Date) => allEvents.filter(e => e.startDate.startsWith(format(date, 'yyyy-MM-dd')));
 
+  // THUẬT TOÁN TÍNH TOÁN CHIỀU DÀI SỰ KIỆN CSS
+  const getEventStyle = (e: any) => {
+    let sH = 8, sM = 0, eH = 9, eM = 0; // Mặc định 8:00 - 9:00 nếu là task không có giờ
+    
+    if (e.startDate && e.startDate.includes('T')) {
+      const parts = e.startDate.split('T')[1].split(':');
+      sH = parseInt(parts[0]); sM = parseInt(parts[1] || '0');
+    }
+    if (e.endDate && e.endDate.includes('T')) {
+      const parts = e.endDate.split('T')[1].split(':');
+      eH = parseInt(parts[0]); eM = parseInt(parts[1] || '0');
+    } else {
+      eH = sH + 1; eM = sM; // Nếu không có giờ kết thúc, cho mặc định dài 1 tiếng
+    }
+    
+    const startMins = sH * 60 + sM;
+    const endMins = eH * 60 + eM;
+    let top = startMins - (START_HOUR * 60); // Tính khoảng cách từ 6h sáng
+    let height = endMins - startMins;
+
+    if (top < 0) { height += top; top = 0; } // Cắt bớt nếu bắt đầu trước 6h sáng
+    if (height < 20) height = 20; // Chiều cao tối thiểu để nhìn thấy được chữ
+
+    return { top: `${top}px`, height: `${height}px` };
+  };
+
   const getBusyHours = (date: Date): Set<number> => {
     const dayEvents = getEventsForDate(date);
     const busyHours = new Set<number>();
@@ -96,7 +119,7 @@ export function CalendarPage() {
         const eh = e.endDate.includes('T') ? parseInt(e.endDate.split('T')[1].split(':')[0]) : h + 1;
         for (let i = h; i <= eh; i++) busyHours.add(i);
       } else {
-        busyHours.add(9); busyHours.add(10);
+        busyHours.add(8); busyHours.add(9);
       }
     });
     return busyHours;
@@ -117,13 +140,6 @@ export function CalendarPage() {
         slotStart = -1;
       }
     }
-    if (slotStart !== -1) {
-      const duration = (22 - slotStart) * 60;
-      if (duration >= 30) {
-        const suggestions = activitySuggestions.filter(a => a.duration <= duration && slotStart >= a.timeRange[0] && slotStart < a.timeRange[1]);
-        slots.push({ date, startHour: slotStart, endHour: 22, duration, suggestions: suggestions.length > 0 ? suggestions : activitySuggestions.filter(a => a.duration <= duration).slice(0, 3) });
-      }
-    }
     return slots;
   };
 
@@ -137,10 +153,19 @@ export function CalendarPage() {
     setShowModal(false);
   };
 
-  const openAddModal = (date?: Date) => {
+  // NÂNG CẤP: Tự động điền ngày giờ khi click đúp vào một khoảng trống trên lịch
+  const openAddModal = (date?: Date, clickHour?: number) => {
     const d = date || new Date();
-    const dateStr = format(d, 'yyyy-MM-dd');
-    setForm({ ...form, startDate: dateStr, endDate: dateStr });
+    const startH = clickHour !== undefined ? clickHour : 9;
+    const endH = startH + 1;
+    
+    setForm({ 
+      ...form, 
+      startDate: format(d, 'yyyy-MM-dd'), 
+      endDate: format(d, 'yyyy-MM-dd'),
+      startTime: `${startH.toString().padStart(2, '0')}:00`,
+      endTime: `${Math.min(endH, 23).toString().padStart(2, '0')}:00`
+    });
     setShowModal(true);
   };
 
@@ -158,6 +183,7 @@ export function CalendarPage() {
 
   return (
     <div className="p-6 space-y-6">
+      {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white">📅 Lịch & Sự kiện</h1>
@@ -165,13 +191,14 @@ export function CalendarPage() {
         </div>
         <div className="flex items-center gap-2">
           <button onClick={() => setShowSuggestions(!showSuggestions)} className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors ${showSuggestions ? 'bg-amber-500 text-white shadow-sm' : 'bg-amber-50 text-amber-700 hover:bg-amber-100 dark:bg-amber-900/20 dark:text-amber-400'}`}><Lightbulb className="w-5 h-5" /> Gợi ý thời gian rảnh</button>
-          <div className="flex border dark:border-gray-600 rounded-lg overflow-hidden">
-            {(['day', 'week', 'month'] as ViewMode[]).map(v => <button key={v} onClick={() => setViewMode(v)} className={`px-3 py-1.5 text-sm transition-colors ${viewMode === v ? 'bg-indigo-600 text-white' : 'bg-white dark:bg-gray-800'}`}>{v === 'day' ? 'Ngày' : v === 'week' ? 'Tuần' : 'Tháng'}</button>)}
+          <div className="flex border dark:border-gray-600 rounded-lg overflow-hidden bg-white dark:bg-gray-800">
+            {(['day', 'week', 'month'] as ViewMode[]).map(v => <button key={v} onClick={() => setViewMode(v)} className={`px-4 py-1.5 text-sm font-medium transition-colors ${viewMode === v ? 'bg-indigo-600 text-white' : 'hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-300'}`}>{v === 'day' ? 'Ngày' : v === 'week' ? 'Tuần' : 'Tháng'}</button>)}
           </div>
           <button onClick={() => openAddModal()} className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 transition-colors text-white px-4 py-2 rounded-lg shadow-sm"><Plus className="w-5 h-5" /> Sự kiện</button>
         </div>
       </div>
 
+      {/* Suggestion Panel */}
       {showSuggestions && (
         <div className="bg-gradient-to-r from-amber-50 to-orange-50 dark:from-amber-900/20 dark:to-orange-900/20 rounded-xl border border-amber-200 dark:border-amber-800 overflow-hidden animate-fadeIn">
           <div className="p-4 border-b border-amber-200 dark:border-amber-800">
@@ -183,27 +210,13 @@ export function CalendarPage() {
           <div className="p-4">
             <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3 flex items-center gap-2"><Zap className="w-4 h-4 text-amber-500" /> Việc nhanh (10-15 phút)</h3>
             <div className="flex flex-wrap gap-2 mb-6">
-              {quickTasks.map((task, i) => <span key={i} className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white dark:bg-gray-800 rounded-full text-sm border hover:border-amber-400 cursor-pointer shadow-sm transition-colors"><span>{task.icon}</span><span>{task.name}</span></span>)}
-            </div>
-            <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3 flex items-center gap-2"><Clock className="w-4 h-4 text-amber-500" /> Khung giờ rảnh trong tuần</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-              {weekFreeSlots.map((dayData, idx) => (
-                <div key={idx} className="bg-white dark:bg-gray-800 rounded-xl p-4 border dark:border-gray-700 shadow-sm">
-                  <p className="font-medium mb-3 dark:text-white">{format(dayData.date, 'EEEE dd/MM', { locale: vi })}</p>
-                  <div className="space-y-2">
-                    {dayData.slots.map((slot, slotIdx) => (
-                      <div key={slotIdx} onClick={() => setSelectedSlot(slot)} className="p-3 bg-green-50 dark:bg-green-900/20 rounded-lg border border-transparent dark:border-green-900/50 cursor-pointer hover:border-green-400 dark:hover:border-green-500 transition-colors">
-                        <div className="text-sm font-medium text-green-700 dark:text-green-400">{slot.startHour.toString().padStart(2, '0')}:00 - {slot.endHour.toString().padStart(2, '0')}:00</div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ))}
+              {quickTasks.map((task, i) => <span key={i} className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white dark:bg-gray-800 dark:text-gray-200 rounded-full text-sm border dark:border-gray-700 hover:border-amber-400 cursor-pointer shadow-sm transition-colors"><span>{task.icon}</span><span>{task.name}</span></span>)}
             </div>
           </div>
         </div>
       )}
 
+      {/* Calendar Controls */}
       <div className="flex items-center justify-between bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border dark:border-gray-700">
         <button onClick={() => navigate(-1)} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"><ChevronLeft className="w-5 h-5 dark:text-white" /></button>
         <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
@@ -212,21 +225,24 @@ export function CalendarPage() {
           {viewMode === 'day' && format(currentDate, "EEEE, dd 'tháng' MM, yyyy", { locale: vi })}
         </h2>
         <div className="flex gap-2">
-          <button onClick={() => setCurrentDate(new Date())} className="px-3 py-1.5 text-sm border dark:border-gray-600 dark:text-white rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">Hôm nay</button>
+          <button onClick={() => setCurrentDate(new Date())} className="px-3 py-1.5 text-sm border dark:border-gray-600 dark:text-white rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors font-medium">Hôm nay</button>
           <button onClick={() => navigate(1)} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"><ChevronRight className="w-5 h-5 dark:text-white" /></button>
         </div>
       </div>
 
+      {/* --- CHẾ ĐỘ THÁNG (GIỮ NGUYÊN) --- */}
       {viewMode === 'month' && (
         <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border dark:border-gray-700 overflow-hidden">
-          <div className="grid grid-cols-7 border-b dark:border-gray-700">{['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'].map(d => <div key={d} className="p-2 text-center text-sm font-medium text-gray-500">{d}</div>)}</div>
+          <div className="grid grid-cols-7 border-b dark:border-gray-700">{['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'].map(d => <div key={d} className="p-3 text-center text-sm font-semibold text-gray-500">{d}</div>)}</div>
           <div className="grid grid-cols-7">
             {calendarDays.map((day, i) => {
               const dayEvents = getEventsForDate(day);
               return (
-                <div key={i} onClick={() => { setSelectedDate(day); setCurrentDate(day); setViewMode('day'); }} className={`min-h-[100px] p-2 border-b border-r dark:border-gray-700 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors ${!isSameMonth(day, currentDate) ? 'opacity-40' : ''}`}>
-                  <div className="flex justify-between mb-1"><div className={`w-7 h-7 flex items-center justify-center rounded-full ${isSameDay(day, today) ? 'bg-indigo-600 text-white' : 'dark:text-white'}`}>{format(day, 'd')}</div></div>
-                  <div className="space-y-1">{dayEvents.slice(0, 3).map(e => <div key={e.id} className="text-xs px-1.5 py-0.5 rounded truncate text-white shadow-sm" style={{ backgroundColor: e.color }}>{(e as any).isTask && <CheckCircle className="w-3 h-3 inline mr-0.5" />}{e.title}</div>)}</div>
+                <div key={i} onClick={() => { setSelectedDate(day); setCurrentDate(day); setViewMode('day'); }} className={`min-h-[120px] p-2 border-b border-r dark:border-gray-700 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors ${!isSameMonth(day, currentDate) ? 'opacity-40 bg-gray-50/50 dark:bg-gray-900/50' : ''}`}>
+                  <div className="flex justify-between mb-2"><div className={`w-7 h-7 flex items-center justify-center rounded-full font-medium ${isSameDay(day, today) ? 'bg-indigo-600 text-white' : 'dark:text-white'}`}>{format(day, 'd')}</div></div>
+                  <div className="space-y-1">{dayEvents.slice(0, 4).map(e => <div key={e.id} className="text-[11px] px-1.5 py-1 rounded truncate text-white shadow-sm" style={{ backgroundColor: e.color }}>{(e as any).isTask && <CheckCircle className="w-3 h-3 inline mr-0.5 -mt-0.5" />}{e.title}</div>)}
+                  {dayEvents.length > 4 && <div className="text-xs text-gray-500 text-center font-medium">+{dayEvents.length - 4} nữa</div>}
+                  </div>
                 </div>
               );
             })}
@@ -234,110 +250,192 @@ export function CalendarPage() {
         </div>
       )}
 
+      {/* --- CHẾ ĐỘ TUẦN: BẢN ĐỒ THỜI GIAN THỰC TẾ --- */}
       {viewMode === 'week' && (
-        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border dark:border-gray-700 overflow-hidden">
-          <div className="grid grid-cols-8 border-b dark:border-gray-700"><div className="p-2 text-center text-sm font-medium text-gray-500">Giờ</div>{weekDays.map((d, i) => <div key={i} className={`p-2 text-center text-sm font-medium ${isSameDay(d, today) ? 'bg-indigo-50 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400' : 'text-gray-500 dark:text-gray-400'}`}>{format(d, 'EEE dd', { locale: vi })}</div>)}</div>
-          <div className="max-h-[500px] overflow-y-auto">
-            {hours.filter(h => h >= 6 && h <= 22).map(h => (
-              <div key={h} className="grid grid-cols-8 border-b dark:border-gray-700 min-h-[50px]">
-                <div className="p-2 text-xs text-gray-500 border-r dark:border-gray-700 flex items-center justify-center">{`${h.toString().padStart(2, '0')}:00`}</div>
-                {weekDays.map((d, i) => {
-                  const dayEvents = getEventsForDate(d).filter(e => e.startDate.includes('T') && parseInt(e.startDate.split('T')[1].split(':')[0]) === h);
-                  return <div key={i} onClick={() => openAddModal(d)} className="border-r dark:border-gray-700 p-1 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">{dayEvents.map(e => <div key={e.id} className="text-xs px-1 py-0.5 rounded text-white mb-0.5 truncate shadow-sm" style={{ backgroundColor: e.color }}>{e.title}</div>)}</div>;
-                })}
+        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border dark:border-gray-700 overflow-hidden flex flex-col">
+          <div className="grid grid-cols-[60px_repeat(7,1fr)] border-b dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50 sticky top-0 z-10">
+            <div className="p-2 border-r dark:border-gray-700"></div>
+            {weekDays.map((d, i) => (
+              <div key={i} className={`p-3 text-center border-r dark:border-gray-700 last:border-r-0 ${isSameDay(d, today) ? 'text-indigo-600 dark:text-indigo-400 font-bold bg-indigo-50 dark:bg-indigo-900/20' : 'text-gray-600 dark:text-gray-300 font-medium'}`}>
+                <div className="text-xs uppercase opacity-70">{format(d, 'EEE', { locale: vi })}</div>
+                <div className="text-lg mt-0.5">{format(d, 'dd')}</div>
               </div>
             ))}
           </div>
-        </div>
-      )}
+          
+          <div className="overflow-y-auto max-h-[600px] relative custom-scrollbar">
+            <div className="grid grid-cols-[60px_repeat(7,1fr)] relative">
+              {/* Cột Giờ */}
+              <div className="relative border-r dark:border-gray-700 bg-white dark:bg-gray-800 z-10">
+                {DISPLAY_HOURS.map(h => (
+                  <div key={h} className="text-xs text-gray-400 text-right pr-2 pt-1 border-b dark:border-gray-700" style={{ height: `${HOUR_HEIGHT}px` }}>{`${h.toString().padStart(2, '0')}:00`}</div>
+                ))}
+              </div>
+              
+              {/* Các Cột Ngày (Chứa Event Absolute) */}
+              {weekDays.map((d, i) => {
+                const dayEvents = getEventsForDate(d);
+                return (
+                  <div key={i} className={`relative border-r dark:border-gray-700 last:border-r-0 ${isSameDay(d, today) ? 'bg-indigo-50/30 dark:bg-indigo-900/10' : ''}`} style={{ height: `${DISPLAY_HOURS.length * HOUR_HEIGHT}px` }} 
+                    onDoubleClick={(e) => {
+                      const rect = e.currentTarget.getBoundingClientRect();
+                      const y = e.clientY - rect.top;
+                      const hour = Math.floor(y / HOUR_HEIGHT) + START_HOUR;
+                      openAddModal(d, hour);
+                    }}>
+                    
+                    {/* Lưới kẻ ngang */}
+                    <div className="absolute inset-0 pointer-events-none">
+                      {DISPLAY_HOURS.map(h => <div key={h} className="border-b dark:border-gray-700/50" style={{ height: `${HOUR_HEIGHT}px` }}></div>)}
+                    </div>
 
-      {viewMode === 'day' && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-          <div className="lg:col-span-2 bg-white dark:bg-gray-800 rounded-xl shadow-sm border dark:border-gray-700 overflow-hidden">
-            <div className="max-h-[600px] overflow-y-auto">
-              {hours.filter(h => h >= 6 && h <= 22).map(h => {
-                const hourEvents = getEventsForDate(currentDate).filter(e => (!e.startDate.includes('T') ? h === 8 : parseInt(e.startDate.split('T')[1].split(':')[0]) === h));
-                return <div key={h} className="flex border-b dark:border-gray-700 min-h-[60px]">
-                  <div className="w-16 p-2 text-sm text-gray-500 border-r dark:border-gray-700 flex items-center justify-center">{`${h.toString().padStart(2, '0')}:00`}</div>
-                  <div className="flex-1 p-2 space-y-1 hover:bg-gray-50 dark:hover:bg-gray-700/50 cursor-pointer transition-colors" onClick={() => openAddModal(currentDate)}>
-                    {hourEvents.map(e => (
-                      <div key={e.id} className="flex justify-between items-center px-3 py-2 rounded-lg text-white text-sm shadow-sm" style={{ backgroundColor: e.color }}>
-                        <span>{e.title}</span>
-                        {!(e as any).isTask && <button onClick={(ev) => { ev.stopPropagation(); deleteEvent(e.id); }} className="p-1 hover:bg-white/20 rounded-md transition-colors"><X className="w-4 h-4" /></button>}
-                      </div>
-                    ))}
+                    {/* Hiển thị Sự kiện với CSS Absolute */}
+                    {dayEvents.map(e => {
+                      const style = getEventStyle(e);
+                      return (
+                        <div key={e.id} className="absolute left-1 right-1 rounded-lg p-1.5 text-white shadow-md overflow-hidden flex flex-col cursor-pointer transition-transform hover:scale-[1.02] hover:z-20 group" 
+                             style={{ ...style, backgroundColor: e.color }}
+                             title={`${e.title}\n${e.startDate.split('T')[1] || '08:00'} - ${e.endDate.split('T')[1] || '09:00'}`}>
+                          <div className="text-xs font-semibold leading-tight line-clamp-2">{(e as any).isTask && <CheckCircle className="w-3 h-3 inline mr-1 -mt-0.5 opacity-80" />}{e.title}</div>
+                          <div className="text-[10px] opacity-90 mt-1 font-medium">
+                            {e.startDate?.includes('T') ? format(new Date(e.startDate), 'HH:mm') : '08:00'} - {e.endDate?.includes('T') ? format(new Date(e.endDate), 'HH:mm') : '09:00'}
+                          </div>
+                          {!(e as any).isTask && (
+                             <button onClick={(ev) => { ev.stopPropagation(); deleteEvent(e.id); }} className="absolute top-1 right-1 p-0.5 bg-black/20 hover:bg-black/40 rounded opacity-0 group-hover:opacity-100 transition-opacity">
+                               <X className="w-3 h-3" />
+                             </button>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
-                </div>;
+                );
               })}
             </div>
           </div>
+        </div>
+      )}
+
+      {/* --- CHẾ ĐỘ NGÀY: PHÓNG TO CHI TIẾT --- */}
+      {viewMode === 'day' && (
+        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+          <div className="lg:col-span-3 bg-white dark:bg-gray-800 rounded-xl shadow-sm border dark:border-gray-700 overflow-hidden flex flex-col">
+            <div className="p-4 border-b dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50">
+               <h3 className="text-lg font-bold text-indigo-600 dark:text-indigo-400">{format(currentDate, "EEEE, dd 'tháng' MM, yyyy", { locale: vi })}</h3>
+            </div>
+            <div className="overflow-y-auto max-h-[700px] relative custom-scrollbar">
+              <div className="grid grid-cols-[80px_1fr] relative">
+                 <div className="relative border-r dark:border-gray-700 bg-white dark:bg-gray-800 z-10">
+                   {DISPLAY_HOURS.map(h => (
+                     <div key={h} className="text-sm font-medium text-gray-500 text-right pr-4 pt-2 border-b dark:border-gray-700" style={{ height: `${HOUR_HEIGHT}px` }}>{`${h.toString().padStart(2, '0')}:00`}</div>
+                   ))}
+                 </div>
+                 <div className="relative bg-gray-50/30 dark:bg-gray-900/20" style={{ height: `${DISPLAY_HOURS.length * HOUR_HEIGHT}px` }} 
+                    onDoubleClick={(e) => {
+                      const rect = e.currentTarget.getBoundingClientRect();
+                      const y = e.clientY - rect.top;
+                      const hour = Math.floor(y / HOUR_HEIGHT) + START_HOUR;
+                      openAddModal(currentDate, hour);
+                    }}>
+                    {DISPLAY_HOURS.map(h => <div key={h} className="border-b dark:border-gray-700/50 pointer-events-none" style={{ height: `${HOUR_HEIGHT}px` }}></div>)}
+                    
+                    {getEventsForDate(currentDate).map(e => {
+                       const style = getEventStyle(e);
+                       return (
+                          <div key={e.id} className="absolute left-2 right-4 rounded-xl p-3 text-white shadow-lg flex flex-col cursor-pointer transition-all hover:scale-[1.01] hover:shadow-xl group border border-white/20" style={{ ...style, backgroundColor: e.color }}>
+                             <div className="flex justify-between items-start">
+                                <span className="font-bold text-base leading-tight">{(e as any).isTask && <CheckCircle className="w-4 h-4 inline mr-1.5 -mt-0.5 opacity-90" />}{e.title}</span>
+                                {!(e as any).isTask && <button onClick={(ev) => { ev.stopPropagation(); deleteEvent(e.id); }} className="p-1.5 bg-black/20 hover:bg-black/40 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity"><X className="w-4 h-4"/></button>}
+                             </div>
+                             <div className="text-sm opacity-90 mt-1.5 font-medium flex items-center gap-1.5">
+                                <Clock className="w-3.5 h-3.5" />
+                                {e.startDate?.includes('T') ? format(new Date(e.startDate), 'HH:mm') : '08:00'} - {e.endDate?.includes('T') ? format(new Date(e.endDate), 'HH:mm') : '09:00'}
+                             </div>
+                             {e.description && <div className="text-sm mt-2 opacity-80 line-clamp-2">{e.description}</div>}
+                          </div>
+                       )
+                    })}
+                 </div>
+              </div>
+            </div>
+          </div>
           <div className="space-y-4">
-            <div className="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border dark:border-gray-700">
-              <h3 className="font-semibold mb-3 dark:text-white">📋 Sự kiện & Việc hôm nay</h3>
+            <div className="bg-white dark:bg-gray-800 rounded-xl p-5 shadow-sm border dark:border-gray-700">
+              <h3 className="font-bold text-lg mb-4 dark:text-white flex items-center gap-2"><Sparkles className="w-5 h-5 text-indigo-500" /> Checklist hôm nay</h3>
               {getEventsForDate(currentDate).length === 0 ? (
-                <p className="text-sm text-gray-500">Không có sự kiện nào</p>
-              ) : getEventsForDate(currentDate).map(e => (
-                <div key={e.id} className="flex items-center gap-3 p-2 rounded-lg mb-2" style={{ backgroundColor: `${e.color}15` }}>
-                  <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: e.color }} />
-                  <p className="text-sm font-medium dark:text-white truncate" title={e.title}>{e.title}</p>
+                <div className="text-center py-8 text-gray-500">
+                  <div className="w-12 h-12 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center mx-auto mb-3"><Coffee className="w-6 h-6 text-gray-400" /></div>
+                  Ngày rảnh rỗi!
                 </div>
-              ))}
+              ) : (
+                <div className="space-y-3">
+                  {getEventsForDate(currentDate).map(e => (
+                    <div key={e.id} className="flex items-start gap-3 p-3 rounded-xl border border-transparent hover:border-gray-200 dark:hover:border-gray-700 transition-colors" style={{ backgroundColor: `${e.color}15` }}>
+                      <div className="w-4 h-4 rounded-full mt-0.5 flex-shrink-0 shadow-sm" style={{ backgroundColor: e.color }} />
+                      <div>
+                        <p className="text-sm font-bold dark:text-white leading-tight">{e.title}</p>
+                        <p className="text-xs text-gray-600 dark:text-gray-400 mt-1 font-medium">{e.startDate?.includes('T') ? format(new Date(e.startDate), 'HH:mm') : '08:00'} - {e.endDate?.includes('T') ? format(new Date(e.endDate), 'HH:mm') : '09:00'}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         </div>
       )}
 
-      {/* --- MODAL CẬP NHẬT: THÊM NGÀY/GIỜ KẾT THÚC --- */}
+      {/* MODAL THÊM SỰ KIỆN */}
       {showModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white dark:bg-gray-800 rounded-2xl w-full max-w-md p-6 shadow-2xl animate-fadeIn">
             <div className="flex justify-between items-center mb-5">
-              <h2 className="text-xl font-bold text-gray-900 dark:text-white">Thêm sự kiện mới</h2>
+              <h2 className="text-xl font-bold text-gray-900 dark:text-white flex items-center gap-2"><Plus className="w-6 h-6 text-indigo-600" /> Thêm sự kiện</h2>
               <button onClick={() => setShowModal(false)} className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"><X className="w-5 h-5 text-gray-500" /></button>
             </div>
             
             <form onSubmit={handleSubmit} className="space-y-5">
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Tiêu đề *</label>
-                <input type="text" value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} className="w-full p-2.5 border dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white focus:ring-2 focus:ring-indigo-500" required placeholder="Nhập tên sự kiện..." />
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Tiêu đề sự kiện *</label>
+                <input type="text" value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} className="w-full p-3 border dark:border-gray-600 rounded-xl dark:bg-gray-700 dark:text-white focus:ring-2 focus:ring-indigo-500 bg-gray-50 dark:bg-gray-800" required placeholder="VD: Họp dự án..." />
               </div>
               
-              {/* Bảng chọn Ngày/Giờ */}
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-2 gap-4 bg-gray-50 dark:bg-gray-900/50 p-4 rounded-xl border dark:border-gray-700">
                 <div className="space-y-2">
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Bắt đầu *</label>
-                  <input type="date" value={form.startDate} onChange={e => setForm({ ...form, startDate: e.target.value, endDate: form.endDate || e.target.value })} className="w-full p-2 border dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white text-sm" required />
-                  <input type="time" value={form.startTime} onChange={e => setForm({ ...form, startTime: e.target.value })} className="w-full p-2 border dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white text-sm" required />
+                  <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider">Bắt đầu</label>
+                  <input type="date" value={form.startDate} onChange={e => setForm({ ...form, startDate: e.target.value, endDate: form.endDate || e.target.value })} className="w-full p-2 border dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white text-sm focus:ring-2 focus:ring-indigo-500" required />
+                  <input type="time" value={form.startTime} onChange={e => setForm({ ...form, startTime: e.target.value })} className="w-full p-2 border dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white text-sm focus:ring-2 focus:ring-indigo-500" required />
                 </div>
                 <div className="space-y-2">
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Kết thúc *</label>
-                  <input type="date" value={form.endDate} onChange={e => setForm({ ...form, endDate: e.target.value })} className="w-full p-2 border dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white text-sm" required />
-                  <input type="time" value={form.endTime} onChange={e => setForm({ ...form, endTime: e.target.value })} className="w-full p-2 border dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white text-sm" required />
+                  <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider">Kết thúc</label>
+                  <input type="date" value={form.endDate} onChange={e => setForm({ ...form, endDate: e.target.value })} className="w-full p-2 border dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white text-sm focus:ring-2 focus:ring-indigo-500" required />
+                  <input type="time" value={form.endTime} onChange={e => setForm({ ...form, endTime: e.target.value })} className="w-full p-2 border dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white text-sm focus:ring-2 focus:ring-indigo-500" required />
                 </div>
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Ghi chú thêm</label>
-                <textarea value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} className="w-full p-2.5 border dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white resize-none" rows={2} placeholder="Mô tả chi tiết..." />
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Mô tả thêm</label>
+                <textarea value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} className="w-full p-3 border dark:border-gray-600 rounded-xl dark:bg-gray-700 dark:text-white resize-none bg-gray-50 dark:bg-gray-800 focus:ring-2 focus:ring-indigo-500" rows={2} placeholder="Nhập ghi chú..." />
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Màu sắc</label>
-                <div className="flex gap-2 flex-wrap">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Phân loại màu sắc</label>
+                <div className="flex gap-3 flex-wrap">
                   {eventColors.map(color => (
-                    <button key={color} type="button" onClick={() => setForm({ ...form, color })} className={`w-6 h-6 rounded-full transition-transform ${form.color === color ? 'ring-2 ring-offset-2 ring-indigo-500 scale-125' : 'hover:scale-110'}`} style={{ backgroundColor: color }} />
+                    <button key={color} type="button" onClick={() => setForm({ ...form, color })} className={`w-8 h-8 rounded-full transition-all duration-200 ${form.color === color ? 'ring-4 ring-offset-2 ring-indigo-200 dark:ring-offset-gray-800 scale-110 shadow-lg' : 'hover:scale-110 opacity-80 hover:opacity-100'}`} style={{ backgroundColor: color }} />
                   ))}
                 </div>
               </div>
 
-              <div className="pt-2 flex gap-3">
-                <button type="button" onClick={() => setShowModal(false)} className="flex-1 py-2.5 border dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg font-medium hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">Hủy</button>
-                <button type="submit" className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white py-2.5 rounded-lg font-medium transition-colors shadow-sm">Lưu sự kiện</button>
+              <div className="pt-3 flex gap-3">
+                <button type="button" onClick={() => setShowModal(false)} className="flex-1 py-3 border dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-xl font-bold hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">Hủy</button>
+                <button type="submit" className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white py-3 rounded-xl font-bold transition-colors shadow-md shadow-indigo-500/25">Lưu sự kiện</button>
               </div>
             </form>
           </div>
         </div>
       )}
+      <style>{`.custom-scrollbar::-webkit-scrollbar { width: 6px; } .custom-scrollbar::-webkit-scrollbar-track { background: transparent; } .custom-scrollbar::-webkit-scrollbar-thumb { background-color: rgba(156, 163, 175, 0.5); border-radius: 10px; }`}</style>
     </div>
   );
 }
