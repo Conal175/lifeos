@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react';
 import { useApp } from '../context/AppContext';
 import { useTableData } from '../hooks/useData';
 import { Event, Task } from '../types';
-import { Plus, X, ChevronLeft, ChevronRight, CheckCircle, Lightbulb, Clock, Zap, Coffee, Book, Dumbbell, Music, Code, Users, Phone, ShoppingBag, Utensils, Briefcase, Heart, Sparkles } from 'lucide-react';
+import { Plus, X, ChevronLeft, ChevronRight, CheckCircle, Lightbulb, Clock, Zap, Coffee, Book, Dumbbell, Music, Code, Users, Phone, ShoppingBag, Utensils, Briefcase, Heart, Sparkles, Repeat } from 'lucide-react';
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth, isSameDay, startOfWeek, endOfWeek, addMonths, subMonths, addWeeks, subWeeks, addDays, subDays, isToday } from 'date-fns';
 import { vi } from 'date-fns/locale';
 
@@ -40,7 +40,8 @@ const DISPLAY_HOURS = Array.from({ length: END_HOUR - START_HOUR + 1 }, (_, i) =
 
 export function CalendarPage() {
   const { user } = useApp();
-  const { data: events = [], isLoading: l1, addRecord: addEvent, deleteRecord: deleteEvent } = useTableData<Event>('events');
+  // ĐÃ NÂNG CẤP: Lấy thêm hàm updateRecord để sửa sự kiện
+  const { data: events = [], isLoading: l1, addRecord: addEvent, updateRecord: updateEvent, deleteRecord: deleteEvent } = useTableData<Event>('events');
   const { data: tasks = [], isLoading: l2 } = useTableData<Task>('tasks');
   const isLoading = l1 || l2;
 
@@ -49,6 +50,9 @@ export function CalendarPage() {
   const [showModal, setShowModal] = useState(false);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [_selectedSlot, setSelectedSlot] = useState<FreeTimeSlot | null>(null);
+  
+  // ĐÃ NÂNG CẤP: Thêm State để lưu ID của sự kiện đang được sửa
+  const [editingEventId, setEditingEventId] = useState<string | null>(null);
 
   const [form, setForm] = useState({ title: '', description: '', startDate: '', startTime: '09:00', endDate: '', endTime: '10:00', color: eventColors[0], recurring: '' as '' | 'daily' | 'weekly' | 'monthly' });
 
@@ -62,7 +66,6 @@ export function CalendarPage() {
   const calendarDays = eachDayOfInterval({ start: startOfWeek(startOfMonth(currentDate), { weekStartsOn: 1 }), end: endOfWeek(endOfMonth(currentDate), { weekStartsOn: 1 }) });
   const weekDays = eachDayOfInterval({ start: weekStart, end: addDays(weekStart, 6) });
 
-  // Tích hợp Task và Subtask vào sự kiện
   const taskEvents = useMemo(() => {
     const formatted: any[] = [];
     tasks.forEach(t => {
@@ -82,12 +85,30 @@ export function CalendarPage() {
 
   const allEvents = [...events, ...taskEvents];
 
-  const getEventsForDate = (date: Date) => allEvents.filter(e => e.startDate.startsWith(format(date, 'yyyy-MM-dd')));
-
-  // THUẬT TOÁN TÍNH TOÁN CHIỀU DÀI SỰ KIỆN CSS
-  const getEventStyle = (e: any) => {
-    let sH = 8, sM = 0, eH = 9, eM = 0; // Mặc định 8:00 - 9:00 nếu là task không có giờ
+  // ĐÃ NÂNG CẤP: Thuật toán quét và nhân bản sự kiện lặp lại (Recurring)
+  const getEventsForDate = (targetDate: Date) => {
+    const targetDateStr = format(targetDate, 'yyyy-MM-dd');
     
+    return allEvents.filter(e => {
+      if (!e.startDate) return false;
+      const eventStartDateStr = e.startDate.split('T')[0];
+      
+      // 1. Trùng khớp ngày gốc
+      if (eventStartDateStr === targetDateStr) return true;
+
+      // 2. Xử lý Lặp lại (Chỉ nhân bản vào các ngày SAU ngày bắt đầu)
+      if (e.recurring && targetDateStr > eventStartDateStr) {
+        const eStart = new Date(eventStartDateStr);
+        if (e.recurring === 'daily') return true;
+        if (e.recurring === 'weekly' && targetDate.getDay() === eStart.getDay()) return true;
+        if (e.recurring === 'monthly' && targetDate.getDate() === eStart.getDate()) return true;
+      }
+      return false;
+    });
+  };
+
+  const getEventStyle = (e: any) => {
+    let sH = 8, sM = 0, eH = 9, eM = 0; 
     if (e.startDate && e.startDate.includes('T')) {
       const parts = e.startDate.split('T')[1].split(':');
       sH = parseInt(parts[0]); sM = parseInt(parts[1] || '0');
@@ -96,16 +117,16 @@ export function CalendarPage() {
       const parts = e.endDate.split('T')[1].split(':');
       eH = parseInt(parts[0]); eM = parseInt(parts[1] || '0');
     } else {
-      eH = sH + 1; eM = sM; // Nếu không có giờ kết thúc, cho mặc định dài 1 tiếng
+      eH = sH + 1; eM = sM; 
     }
     
     const startMins = sH * 60 + sM;
     const endMins = eH * 60 + eM;
-    let top = startMins - (START_HOUR * 60); // Tính khoảng cách từ 6h sáng
+    let top = startMins - (START_HOUR * 60); 
     let height = endMins - startMins;
 
-    if (top < 0) { height += top; top = 0; } // Cắt bớt nếu bắt đầu trước 6h sáng
-    if (height < 20) height = 20; // Chiều cao tối thiểu để nhìn thấy được chữ
+    if (top < 0) { height += top; top = 0; } 
+    if (height < 20) height = 20; 
 
     return { top: `${top}px`, height: `${height}px` };
   };
@@ -146,14 +167,34 @@ export function CalendarPage() {
   const weekFreeSlots = useMemo(() => weekDays.map(day => ({ date: day, slots: getFreeTimeSlots(day) })).filter(d => d.slots.length > 0), [weekDays, events, tasks]);
   const totalFreeMinutes = useMemo(() => weekFreeSlots.reduce((total, day) => total + day.slots.reduce((dayTotal, slot) => dayTotal + slot.duration, 0), 0), [weekFreeSlots]);
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    addEvent({ title: form.title, description: form.description, startDate: `${form.startDate}T${form.startTime}`, endDate: `${form.endDate || form.startDate}T${form.endTime}`, color: form.color, recurring: form.recurring || undefined, userId: user?.id });
+  // ĐÃ NÂNG CẤP: Hàm xử lý Đóng Modal và Reset Form
+  const closeModal = () => {
     setForm({ title: '', description: '', startDate: '', startTime: '09:00', endDate: '', endTime: '10:00', color: eventColors[0], recurring: '' });
+    setEditingEventId(null);
     setShowModal(false);
   };
 
-  // NÂNG CẤP: Tự động điền ngày giờ khi click đúp vào một khoảng trống trên lịch
+  // ĐÃ NÂNG CẤP: Hàm xử lý Lưu (Gồm cả Tạo mới và Cập nhật)
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const eventData = { 
+      title: form.title, 
+      description: form.description, 
+      startDate: `${form.startDate}T${form.startTime}`, 
+      endDate: `${form.endDate || form.startDate}T${form.endTime}`, 
+      color: form.color, 
+      recurring: form.recurring || null, 
+      userId: user?.id 
+    };
+
+    if (editingEventId) {
+      updateEvent({ id: editingEventId, data: eventData });
+    } else {
+      addEvent(eventData);
+    }
+    closeModal();
+  };
+
   const openAddModal = (date?: Date, clickHour?: number) => {
     const d = date || new Date();
     const startH = clickHour !== undefined ? clickHour : 9;
@@ -166,6 +207,28 @@ export function CalendarPage() {
       startTime: `${startH.toString().padStart(2, '0')}:00`,
       endTime: `${Math.min(endH, 23).toString().padStart(2, '0')}:00`
     });
+    setEditingEventId(null);
+    setShowModal(true);
+  };
+
+  // ĐÃ NÂNG CẤP: Hàm mở Modal để Chỉnh sửa sự kiện đã có
+  const openEditModal = (e: any) => {
+    if (e.isTask) return; // Không cho phép sửa Task ở bên lịch
+    
+    const startParts = e.startDate ? e.startDate.split('T') : [format(new Date(), 'yyyy-MM-dd'), '09:00'];
+    const endParts = e.endDate ? e.endDate.split('T') : [startParts[0], '10:00'];
+
+    setForm({
+      title: e.title,
+      description: e.description || '',
+      startDate: startParts[0],
+      startTime: startParts[1]?.substring(0, 5) || '09:00', // Lấy HH:mm
+      endDate: endParts[0] || startParts[0],
+      endTime: endParts[1]?.substring(0, 5) || '10:00',
+      color: e.color,
+      recurring: e.recurring || ''
+    });
+    setEditingEventId(e.id);
     setShowModal(true);
   };
 
@@ -230,7 +293,7 @@ export function CalendarPage() {
         </div>
       </div>
 
-      {/* --- CHẾ ĐỘ THÁNG (GIỮ NGUYÊN) --- */}
+      {/* --- CHẾ ĐỘ THÁNG --- */}
       {viewMode === 'month' && (
         <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border dark:border-gray-700 overflow-hidden">
           <div className="grid grid-cols-7 border-b dark:border-gray-700">{['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'].map(d => <div key={d} className="p-3 text-center text-sm font-semibold text-gray-500">{d}</div>)}</div>
@@ -240,7 +303,17 @@ export function CalendarPage() {
               return (
                 <div key={i} onClick={() => { setSelectedDate(day); setCurrentDate(day); setViewMode('day'); }} className={`min-h-[120px] p-2 border-b border-r dark:border-gray-700 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors ${!isSameMonth(day, currentDate) ? 'opacity-40 bg-gray-50/50 dark:bg-gray-900/50' : ''}`}>
                   <div className="flex justify-between mb-2"><div className={`w-7 h-7 flex items-center justify-center rounded-full font-medium ${isSameDay(day, today) ? 'bg-indigo-600 text-white' : 'dark:text-white'}`}>{format(day, 'd')}</div></div>
-                  <div className="space-y-1">{dayEvents.slice(0, 4).map(e => <div key={e.id} className="text-[11px] px-1.5 py-1 rounded truncate text-white shadow-sm" style={{ backgroundColor: e.color }}>{(e as any).isTask && <CheckCircle className="w-3 h-3 inline mr-0.5 -mt-0.5" />}{e.title}</div>)}
+                  <div className="space-y-1">
+                    {dayEvents.slice(0, 4).map(e => (
+                      <div key={e.id} 
+                           onClick={(ev) => { ev.stopPropagation(); openEditModal(e); }}
+                           className={`text-[11px] px-1.5 py-1 rounded truncate text-white shadow-sm ${!(e as any).isTask && 'hover:brightness-90 transition-all'}`} 
+                           style={{ backgroundColor: e.color }}>
+                        {e.recurring && <Repeat className="w-2.5 h-2.5 inline mr-0.5 -mt-0.5 opacity-80" />}
+                        {(e as any).isTask && <CheckCircle className="w-3 h-3 inline mr-0.5 -mt-0.5 opacity-80" />}
+                        {e.title}
+                      </div>
+                    ))}
                   {dayEvents.length > 4 && <div className="text-xs text-gray-500 text-center font-medium">+{dayEvents.length - 4} nữa</div>}
                   </div>
                 </div>
@@ -250,7 +323,7 @@ export function CalendarPage() {
         </div>
       )}
 
-      {/* --- CHẾ ĐỘ TUẦN: BẢN ĐỒ THỜI GIAN THỰC TẾ --- */}
+      {/* --- CHẾ ĐỘ TUẦN --- */}
       {viewMode === 'week' && (
         <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border dark:border-gray-700 overflow-hidden flex flex-col">
           <div className="grid grid-cols-[60px_repeat(7,1fr)] border-b dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50 sticky top-0 z-10">
@@ -265,14 +338,12 @@ export function CalendarPage() {
           
           <div className="overflow-y-auto max-h-[600px] relative custom-scrollbar">
             <div className="grid grid-cols-[60px_repeat(7,1fr)] relative">
-              {/* Cột Giờ */}
               <div className="relative border-r dark:border-gray-700 bg-white dark:bg-gray-800 z-10">
                 {DISPLAY_HOURS.map(h => (
                   <div key={h} className="text-xs text-gray-400 text-right pr-2 pt-1 border-b dark:border-gray-700" style={{ height: `${HOUR_HEIGHT}px` }}>{`${h.toString().padStart(2, '0')}:00`}</div>
                 ))}
               </div>
               
-              {/* Các Cột Ngày (Chứa Event Absolute) */}
               {weekDays.map((d, i) => {
                 const dayEvents = getEventsForDate(d);
                 return (
@@ -284,19 +355,23 @@ export function CalendarPage() {
                       openAddModal(d, hour);
                     }}>
                     
-                    {/* Lưới kẻ ngang */}
                     <div className="absolute inset-0 pointer-events-none">
                       {DISPLAY_HOURS.map(h => <div key={h} className="border-b dark:border-gray-700/50" style={{ height: `${HOUR_HEIGHT}px` }}></div>)}
                     </div>
 
-                    {/* Hiển thị Sự kiện với CSS Absolute */}
                     {dayEvents.map(e => {
                       const style = getEventStyle(e);
                       return (
-                        <div key={e.id} className="absolute left-1 right-1 rounded-lg p-1.5 text-white shadow-md overflow-hidden flex flex-col cursor-pointer transition-transform hover:scale-[1.02] hover:z-20 group" 
+                        <div key={e.id} 
+                             onClick={(ev) => { ev.stopPropagation(); openEditModal(e); }}
+                             className={`absolute left-1 right-1 rounded-lg p-1.5 text-white shadow-md overflow-hidden flex flex-col transition-transform hover:scale-[1.02] hover:z-20 group border border-white/20 ${!(e as any).isTask ? 'cursor-pointer' : 'cursor-default'}`} 
                              style={{ ...style, backgroundColor: e.color }}
                              title={`${e.title}\n${e.startDate.split('T')[1] || '08:00'} - ${e.endDate.split('T')[1] || '09:00'}`}>
-                          <div className="text-xs font-semibold leading-tight line-clamp-2">{(e as any).isTask && <CheckCircle className="w-3 h-3 inline mr-1 -mt-0.5 opacity-80" />}{e.title}</div>
+                          <div className="text-xs font-semibold leading-tight line-clamp-2">
+                            {e.recurring && <Repeat className="w-2.5 h-2.5 inline mr-1 -mt-0.5 opacity-80" />}
+                            {(e as any).isTask && <CheckCircle className="w-3 h-3 inline mr-1 -mt-0.5 opacity-80" />}
+                            {e.title}
+                          </div>
                           <div className="text-[10px] opacity-90 mt-1 font-medium">
                             {e.startDate?.includes('T') ? format(new Date(e.startDate), 'HH:mm') : '08:00'} - {e.endDate?.includes('T') ? format(new Date(e.endDate), 'HH:mm') : '09:00'}
                           </div>
@@ -316,7 +391,7 @@ export function CalendarPage() {
         </div>
       )}
 
-      {/* --- CHẾ ĐỘ NGÀY: PHÓNG TO CHI TIẾT --- */}
+      {/* --- CHẾ ĐỘ NGÀY --- */}
       {viewMode === 'day' && (
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
           <div className="lg:col-span-3 bg-white dark:bg-gray-800 rounded-xl shadow-sm border dark:border-gray-700 overflow-hidden flex flex-col">
@@ -342,9 +417,16 @@ export function CalendarPage() {
                     {getEventsForDate(currentDate).map(e => {
                        const style = getEventStyle(e);
                        return (
-                          <div key={e.id} className="absolute left-2 right-4 rounded-xl p-3 text-white shadow-lg flex flex-col cursor-pointer transition-all hover:scale-[1.01] hover:shadow-xl group border border-white/20" style={{ ...style, backgroundColor: e.color }}>
+                          <div key={e.id} 
+                               onClick={(ev) => { ev.stopPropagation(); openEditModal(e); }}
+                               className={`absolute left-2 right-4 rounded-xl p-3 text-white shadow-lg flex flex-col transition-all hover:scale-[1.01] hover:shadow-xl group border border-white/20 ${!(e as any).isTask ? 'cursor-pointer' : 'cursor-default'}`} 
+                               style={{ ...style, backgroundColor: e.color }}>
                              <div className="flex justify-between items-start">
-                                <span className="font-bold text-base leading-tight">{(e as any).isTask && <CheckCircle className="w-4 h-4 inline mr-1.5 -mt-0.5 opacity-90" />}{e.title}</span>
+                                <span className="font-bold text-base leading-tight">
+                                  {e.recurring && <Repeat className="w-4 h-4 inline mr-1.5 -mt-0.5 opacity-90" />}
+                                  {(e as any).isTask && <CheckCircle className="w-4 h-4 inline mr-1.5 -mt-0.5 opacity-90" />}
+                                  {e.title}
+                                </span>
                                 {!(e as any).isTask && <button onClick={(ev) => { ev.stopPropagation(); deleteEvent(e.id); }} className="p-1.5 bg-black/20 hover:bg-black/40 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity"><X className="w-4 h-4"/></button>}
                              </div>
                              <div className="text-sm opacity-90 mt-1.5 font-medium flex items-center gap-1.5">
@@ -361,7 +443,7 @@ export function CalendarPage() {
           </div>
           <div className="space-y-4">
             <div className="bg-white dark:bg-gray-800 rounded-xl p-5 shadow-sm border dark:border-gray-700">
-              <h3 className="font-bold text-lg mb-4 dark:text-white flex items-center gap-2"><Sparkles className="w-5 h-5 text-indigo-500" /> Checklist hôm nay</h3>
+              <h3 className="font-bold text-lg mb-4 dark:text-white flex items-center gap-2"><Sparkles className="w-5 h-5 text-indigo-500" /> Sự kiện & Việc hôm nay</h3>
               {getEventsForDate(currentDate).length === 0 ? (
                 <div className="text-center py-8 text-gray-500">
                   <div className="w-12 h-12 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center mx-auto mb-3"><Coffee className="w-6 h-6 text-gray-400" /></div>
@@ -370,8 +452,10 @@ export function CalendarPage() {
               ) : (
                 <div className="space-y-3">
                   {getEventsForDate(currentDate).map(e => (
-                    <div key={e.id} className="flex items-start gap-3 p-3 rounded-xl border border-transparent hover:border-gray-200 dark:hover:border-gray-700 transition-colors" style={{ backgroundColor: `${e.color}15` }}>
-                      <div className="w-4 h-4 rounded-full mt-0.5 flex-shrink-0 shadow-sm" style={{ backgroundColor: e.color }} />
+                    <div key={e.id} onClick={() => openEditModal(e)} className={`flex items-start gap-3 p-3 rounded-xl border border-transparent transition-colors ${!(e as any).isTask ? 'cursor-pointer hover:border-gray-200 dark:hover:border-gray-700' : ''}`} style={{ backgroundColor: `${e.color}15` }}>
+                      <div className="w-4 h-4 rounded-full mt-0.5 flex-shrink-0 shadow-sm flex items-center justify-center text-white" style={{ backgroundColor: e.color }}>
+                        {e.recurring && <Repeat className="w-2.5 h-2.5" />}
+                      </div>
                       <div>
                         <p className="text-sm font-bold dark:text-white leading-tight">{e.title}</p>
                         <p className="text-xs text-gray-600 dark:text-gray-400 mt-1 font-medium">{e.startDate?.includes('T') ? format(new Date(e.startDate), 'HH:mm') : '08:00'} - {e.endDate?.includes('T') ? format(new Date(e.endDate), 'HH:mm') : '09:00'}</p>
@@ -385,13 +469,15 @@ export function CalendarPage() {
         </div>
       )}
 
-      {/* MODAL THÊM SỰ KIỆN */}
+      {/* --- MODAL THÊM / SỬA SỰ KIỆN --- */}
       {showModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white dark:bg-gray-800 rounded-2xl w-full max-w-md p-6 shadow-2xl animate-fadeIn">
             <div className="flex justify-between items-center mb-5">
-              <h2 className="text-xl font-bold text-gray-900 dark:text-white flex items-center gap-2"><Plus className="w-6 h-6 text-indigo-600" /> Thêm sự kiện</h2>
-              <button onClick={() => setShowModal(false)} className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"><X className="w-5 h-5 text-gray-500" /></button>
+              <h2 className="text-xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                <Plus className="w-6 h-6 text-indigo-600" /> {editingEventId ? 'Sửa sự kiện' : 'Thêm sự kiện'}
+              </h2>
+              <button onClick={closeModal} className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"><X className="w-5 h-5 text-gray-500" /></button>
             </div>
             
             <form onSubmit={handleSubmit} className="space-y-5">
@@ -411,10 +497,21 @@ export function CalendarPage() {
                   <input type="date" value={form.endDate} onChange={e => setForm({ ...form, endDate: e.target.value })} className="w-full p-2 border dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white text-sm focus:ring-2 focus:ring-indigo-500" required />
                   <input type="time" value={form.endTime} onChange={e => setForm({ ...form, endTime: e.target.value })} className="w-full p-2 border dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white text-sm focus:ring-2 focus:ring-indigo-500" required />
                 </div>
+
+                {/* THIẾT LẬP LẶP LẠI */}
+                <div className="space-y-2 col-span-2 pt-2 border-t dark:border-gray-700">
+                  <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider flex items-center gap-1"><Repeat className="w-3 h-3"/> Lặp lại sự kiện</label>
+                  <select value={form.recurring} onChange={e => setForm({ ...form, recurring: e.target.value as any })} className="w-full p-2 border dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white text-sm focus:ring-2 focus:ring-indigo-500">
+                    <option value="">Không lặp lại</option>
+                    <option value="daily">Hằng ngày</option>
+                    <option value="weekly">Hằng tuần (Cùng thứ)</option>
+                    <option value="monthly">Hằng tháng (Cùng ngày)</option>
+                  </select>
+                </div>
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Mô tả thêm</label>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Ghi chú thêm</label>
                 <textarea value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} className="w-full p-3 border dark:border-gray-600 rounded-xl dark:bg-gray-700 dark:text-white resize-none bg-gray-50 dark:bg-gray-800 focus:ring-2 focus:ring-indigo-500" rows={2} placeholder="Nhập ghi chú..." />
               </div>
 
@@ -428,8 +525,8 @@ export function CalendarPage() {
               </div>
 
               <div className="pt-3 flex gap-3">
-                <button type="button" onClick={() => setShowModal(false)} className="flex-1 py-3 border dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-xl font-bold hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">Hủy</button>
-                <button type="submit" className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white py-3 rounded-xl font-bold transition-colors shadow-md shadow-indigo-500/25">Lưu sự kiện</button>
+                <button type="button" onClick={closeModal} className="flex-1 py-3 border dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-xl font-bold hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">Hủy</button>
+                <button type="submit" className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white py-3 rounded-xl font-bold transition-colors shadow-md shadow-indigo-500/25">{editingEventId ? 'Cập nhật' : 'Lưu sự kiện'}</button>
               </div>
             </form>
           </div>
