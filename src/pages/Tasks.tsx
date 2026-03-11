@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useApp } from '../context/AppContext';
 import { useTableData } from '../hooks/useData';
 import { Task, Subtask } from '../types';
@@ -29,7 +29,6 @@ export function Tasks() {
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
   const [detailTask, setDetailTask] = useState<string | null>(null);
 
-  // ĐÃ NÂNG CẤP: State để theo dõi ID của Task đang được sửa
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
 
   const [form, setForm] = useState({ 
@@ -82,6 +81,28 @@ export function Tasks() {
     updateRecord({ id: taskId, data: { subtasks, status: allDone ? 'done' : anyProg ? 'in_progress' : 'todo', completed: allDone, completedAt: allDone ? new Date().toISOString() : null } });
   };
 
+  const updateSubtask = (taskId: string, subtaskId: string, data: Partial<Subtask>) => {
+    const task = tasks.find(t => t.id === taskId);
+    if (!task) return;
+    const subtasks = task.subtasks?.map(s => s.id === subtaskId ? { ...s, ...data } : s) || [];
+    updateRecord({ id: taskId, data: { subtasks } });
+  };
+
+  const addSubtaskToTask = (taskId: string) => {
+    if (!newSubtask.trim()) return;
+    const task = tasks.find(t => t.id === taskId);
+    if (!task) return;
+    const newSub = { id: `s-${Date.now()}`, title: newSubtask, completed: false, status: 'todo' as const };
+    updateRecord({ id: taskId, data: { subtasks: [...(task.subtasks || []), newSub] } });
+    setNewSubtask('');
+  };
+
+  const deleteSubtaskCtx = (taskId: string, subtaskId: string) => {
+    const task = tasks.find(t => t.id === taskId);
+    if (!task) return;
+    updateRecord({ id: taskId, data: { subtasks: task.subtasks?.filter(s => s.id !== subtaskId) || [] } });
+  };
+
   const toggleExpand = (taskId: string) => setExpandedTasks(prev => { const next = new Set(prev); next.has(taskId) ? next.delete(taskId) : next.add(taskId); return next; });
 
   const closeModal = () => {
@@ -90,7 +111,6 @@ export function Tasks() {
     setShowModal(false);
   };
 
-  // ĐÃ NÂNG CẤP: Hàm mở Modal và điền sẵn dữ liệu để Sửa
   const openEditModal = (task: Task) => {
     setForm({
       title: task.title,
@@ -101,13 +121,12 @@ export function Tasks() {
       status: task.status || 'todo',
       assignee: task.assignee || '',
       estimatedHours: task.estimatedHours || 0,
-      subtaskInputs: [''] // Reset ô nhập subtask mới
+      subtaskInputs: ['']
     });
     setEditingTaskId(task.id);
     setShowModal(true);
   };
 
-  // ĐÃ NÂNG CẤP: Phân luồng Thêm mới hoặc Cập nhật
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const validSubtasks = form.subtaskInputs.filter(s => s.trim()).map((s, i) => ({ id: `s-${Date.now()}-${i}`, title: s, completed: false, status: 'todo' as const }));
@@ -125,10 +144,8 @@ export function Tasks() {
     };
 
     if (editingTaskId) {
-      // Nếu đang sửa: Giữ nguyên subtask cũ và nối thêm subtask mới (nếu có nhập)
       const existingTask = tasks.find(t => t.id === editingTaskId);
       const updatedSubtasks = existingTask?.subtasks ? [...existingTask.subtasks, ...validSubtasks] : validSubtasks;
-      
       updateRecord({ 
         id: editingTaskId, 
         data: { 
@@ -138,7 +155,6 @@ export function Tasks() {
         } 
       });
     } else {
-      // Nếu thêm mới
       addRecord({ 
         ...taskData, 
         createdAt: new Date().toISOString(), 
@@ -147,7 +163,6 @@ export function Tasks() {
         completedAt: form.status === 'done' ? new Date().toISOString() : null
       });
     }
-    
     closeModal();
   };
 
@@ -158,6 +173,7 @@ export function Tasks() {
   const inProgressCount = tasks.filter(t => t.status === 'in_progress').length;
   const overdueCount = tasks.filter(t => !t.completed && t.status !== 'done' && isPast(new Date(t.dueDate)) && !isToday(new Date(t.dueDate))).length;
   const todayCount = tasks.filter(t => isToday(new Date(t.dueDate)) && !t.completed && t.status !== 'done').length;
+  const detailTaskData = detailTask ? tasks.find(t => t.id === detailTask) : null;
 
   return (
     <div className="p-4 md:p-6 space-y-4 md:space-y-6">
@@ -193,7 +209,7 @@ export function Tasks() {
         ))}
       </div>
 
-      {/* View Table */}
+      {/* View Table KHÔI PHỤC SUBTASK VÀ MỞ RỘNG */}
       {viewMode === 'table' && (
         <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border dark:border-gray-700 overflow-hidden overflow-x-auto">
           <table className="w-full min-w-[900px]">
@@ -217,20 +233,66 @@ export function Tasks() {
                 const isDone = task.completed || task.status === 'done';
 
                 return (
-                  <tr key={task.id} className={`hover:bg-gray-50 dark:hover:bg-gray-700/50 ${isDone ? 'opacity-60' : ''}`}>
-                    <td className="px-3 py-3">{subs.length > 0 && <button onClick={() => toggleExpand(task.id)}><ChevronDown className="w-4 h-4 text-gray-500" /></button>}</td>
-                    <td className="px-2 py-3"><button onClick={() => completeTask(task.id)}>{isDone ? <CheckCircle2 className="w-5 h-5 text-green-500" /> : <Circle className="w-5 h-5 text-gray-300" />}</button></td>
-                    <td className="px-3 py-3"><span className={`text-sm font-medium dark:text-white ${isDone ? 'line-through' : ''}`}>{task.title}</span></td>
-                    <td className="px-3 py-3"><select value={task.status || 'todo'} onChange={e => changeTaskStatus(task.id, e.target.value as 'todo')} className={`px-2 py-1 rounded-lg text-xs font-medium ${statusConfig[task.status || 'todo'].color}`}><option value="todo">📋 Chờ làm</option><option value="in_progress">🔄 Đang làm</option><option value="done">✅ Hoàn thành</option></select></td>
-                    <td className="px-3 py-3"><span className={`px-2 py-1 rounded-lg text-xs font-medium ${pc.color}`}>{pc.label}</span></td>
-                    <td className="px-3 py-3"><div className="w-[80px] bg-gray-200 rounded-full h-2"><div className="bg-indigo-500 h-2 rounded-full" style={{ width: `${progress}%` }} /></div></td>
-                    <td className="px-3 py-3"><span className="text-xs font-medium dark:text-gray-300">{format(new Date(task.dueDate), 'dd/MM/yyyy')}</span></td>
-                    <td className="px-3 py-3 text-center flex items-center justify-center gap-1">
-                      {/* ĐÃ NÂNG CẤP: Nút Sửa */}
-                      <button onClick={() => openEditModal(task)} className="p-1.5 text-gray-500 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg transition-colors" title="Sửa"><Edit2 className="w-4 h-4" /></button>
-                      <button onClick={() => deleteRecord(task.id)} className="p-1.5 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg transition-colors" title="Xóa"><Trash2 className="w-4 h-4" /></button>
-                    </td>
-                  </tr>
+                  <React.Fragment key={task.id}>
+                    <tr className={`hover:bg-gray-50 dark:hover:bg-gray-700/50 ${isDone ? 'opacity-60' : ''}`}>
+                      <td className="px-3 py-3">{subs.length > 0 && <button onClick={() => toggleExpand(task.id)} className="p-1 hover:bg-gray-200 dark:hover:bg-gray-600 rounded">{isExpanded ? <ChevronDown className="w-4 h-4 text-gray-500" /> : <ChevronRight className="w-4 h-4 text-gray-500" />}</button>}</td>
+                      <td className="px-2 py-3"><button onClick={() => completeTask(task.id)}>{isDone ? <CheckCircle2 className="w-5 h-5 text-green-500" /> : <Circle className="w-5 h-5 text-gray-300 hover:text-indigo-400" />}</button></td>
+                      <td className="px-3 py-3"><span className={`text-sm font-medium dark:text-white ${isDone ? 'line-through' : ''}`}>{task.title}</span></td>
+                      <td className="px-3 py-3"><select value={task.status || 'todo'} onChange={e => changeTaskStatus(task.id, e.target.value as any)} className={`px-2 py-1 rounded-lg text-xs font-medium border-0 cursor-pointer ${statusConfig[task.status || 'todo'].color}`}><option value="todo">📋 Chờ làm</option><option value="in_progress">🔄 Đang làm</option><option value="review">👁️ Đang review</option><option value="done">✅ Hoàn thành</option></select></td>
+                      <td className="px-3 py-3"><span className={`px-2 py-1 rounded-lg text-xs font-medium flex w-fit items-center gap-1 ${pc.color}`}><span className={`w-1.5 h-1.5 rounded-full ${pc.dot}`}></span>{pc.label}</span></td>
+                      <td className="px-3 py-3"><div className="w-[80px] bg-gray-200 dark:bg-gray-700 rounded-full h-2 overflow-hidden"><div className={`h-2 rounded-full transition-all ${progress === 100 ? 'bg-green-500' : 'bg-indigo-500'}`} style={{ width: `${progress}%` }} /></div></td>
+                      <td className="px-3 py-3"><span className="text-xs font-medium dark:text-gray-300">{format(new Date(task.dueDate), 'dd/MM/yyyy')}</span></td>
+                      <td className="px-3 py-3 text-center flex items-center justify-center gap-1">
+                        <button onClick={() => setDetailTask(task.id)} className="p-1.5 text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-lg transition-colors" title="Xem chi tiết"><Eye className="w-4 h-4" /></button>
+                        <button onClick={() => openEditModal(task)} className="p-1.5 text-gray-500 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg transition-colors" title="Sửa"><Edit2 className="w-4 h-4" /></button>
+                        <button onClick={() => deleteRecord(task.id)} className="p-1.5 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg transition-colors" title="Xóa"><Trash2 className="w-4 h-4" /></button>
+                      </td>
+                    </tr>
+                    
+                    {/* Render Subtasks */}
+                    {isExpanded && subs.map(sub => (
+                      <tr key={sub.id} className="bg-gray-50/70 dark:bg-gray-900/30 hover:bg-indigo-50/50 dark:hover:bg-indigo-900/10 transition-colors">
+                        <td className="px-3 py-2 text-center border-r dark:border-gray-700"><div className="w-0.5 h-full bg-gray-300 dark:bg-gray-600 mx-auto"></div></td>
+                        <td className="px-2 py-2 text-center">
+                          <button onClick={() => toggleSubtask(task.id, sub.id)}>
+                            {sub.completed ? <CheckCircle2 className="w-4 h-4 text-green-500" /> : <Circle className="w-4 h-4 text-gray-400 hover:text-indigo-500" />}
+                          </button>
+                        </td>
+                        <td className="px-3 py-2" colSpan={5}>
+                          <div className="flex items-center gap-2">
+                            <div className="w-3 border-b-2 border-l-2 border-gray-300 dark:border-gray-600 h-3 rounded-bl -mt-2"></div>
+                            <span className={`text-sm ${sub.completed ? 'line-through text-gray-400' : 'dark:text-gray-300'}`}>{sub.title}</span>
+                          </div>
+                        </td>
+                        <td className="px-3 py-2 text-center">
+                          <button onClick={() => deleteSubtaskCtx(task.id, sub.id)} className="p-1 text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 rounded"><Trash2 className="w-3.5 h-3.5" /></button>
+                        </td>
+                      </tr>
+                    ))}
+
+                    {/* Thêm Subtask Nhanh */}
+                    {isExpanded && (
+                      <tr className="bg-gray-50/70 dark:bg-gray-900/30">
+                        <td className="px-3 py-2 border-r dark:border-gray-700"><div className="w-0.5 h-full bg-gray-300 dark:bg-gray-600 mx-auto"></div></td>
+                        <td></td>
+                        <td className="px-3 py-2" colSpan={6}>
+                          <div className="flex items-center gap-2 max-w-sm pl-4">
+                            <Plus className="w-4 h-4 text-gray-400" />
+                            <input type="text" value={editingTask === task.id ? newSubtask : ''}
+                              onFocus={() => setEditingTask(task.id)}
+                              onChange={e => { setEditingTask(task.id); setNewSubtask(e.target.value); }}
+                              onKeyDown={e => { if (e.key === 'Enter') addSubtaskToTask(task.id); }}
+                              placeholder="Thêm bước... (Enter để lưu)"
+                              className="flex-1 px-3 py-1.5 text-sm border dark:border-gray-600 rounded-lg dark:bg-gray-800 dark:text-white focus:ring-2 focus:ring-indigo-500 bg-white"
+                            />
+                            {editingTask === task.id && newSubtask.trim() && (
+                              <button onClick={() => addSubtaskToTask(task.id)} className="px-3 py-1.5 bg-indigo-600 text-white rounded-lg text-xs">Thêm</button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </React.Fragment>
                 );
               })}
             </tbody>
@@ -247,8 +309,7 @@ export function Tasks() {
               <div className="space-y-2">
                 {filtered.filter(t => (t.status || 'todo') === key).map(task => (
                   <div key={task.id} className={`bg-white dark:bg-gray-800 p-3 rounded-lg border dark:border-gray-700 border-l-3 ${priorityConfig[task.priority].border} group relative`}>
-                    <h4 className="font-medium text-sm dark:text-white">{task.title}</h4>
-                    {/* ĐÃ NÂNG CẤP: Nút Sửa trên Board View */}
+                    <h4 onClick={() => setDetailTask(task.id)} className="font-medium text-sm dark:text-white pr-6 cursor-pointer">{task.title}</h4>
                     <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                       <button onClick={() => openEditModal(task)} className="p-1 bg-gray-100 dark:bg-gray-700 rounded text-gray-600 dark:text-gray-300 hover:bg-gray-200"><Edit2 className="w-3 h-3" /></button>
                     </div>
@@ -260,7 +321,74 @@ export function Tasks() {
         </div>
       )}
 
-      {/* ĐÃ NÂNG CẤP: Modal form đầy đủ thông tin */}
+      {/* BẢNG CHI TIẾT CÔNG VIỆC TRƯỢT RA (DETAIL PANEL) KHÔI PHỤC HOÀN TOÀN */}
+      {detailTaskData && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex justify-end" onClick={() => setDetailTask(null)}>
+          <div className="bg-white dark:bg-gray-800 w-full max-w-lg shadow-2xl overflow-y-auto animate-slideInRight" onClick={e => e.stopPropagation()}>
+            <div className="sticky top-0 bg-white dark:bg-gray-800 border-b dark:border-gray-700 p-4 flex items-center justify-between z-10">
+              <h2 className="text-lg font-bold text-gray-900 dark:text-white">Chi tiết công việc</h2>
+              <button onClick={() => setDetailTask(null)} className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg"><X className="w-5 h-5 text-gray-500" /></button>
+            </div>
+            <div className="p-5 space-y-5">
+              <div>
+                <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2">{detailTaskData.title}</h3>
+                {detailTaskData.description && <p className="text-sm text-gray-600 dark:text-gray-400 whitespace-pre-wrap">{detailTaskData.description}</p>}
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="bg-gray-50 dark:bg-gray-900/50 rounded-lg p-3">
+                  <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">Trạng thái</div>
+                  <select value={detailTaskData.status || 'todo'} onChange={e => changeTaskStatus(detailTaskData.id, e.target.value as any)} className={`w-full px-2 py-1 rounded text-sm font-medium border-0 cursor-pointer ${statusConfig[detailTaskData.status || 'todo'].color}`}>
+                    <option value="todo">📋 Chờ làm</option><option value="in_progress">🔄 Đang làm</option><option value="review">👁️ Đang review</option><option value="done">✅ Hoàn thành</option>
+                  </select>
+                </div>
+                <div className="bg-gray-50 dark:bg-gray-900/50 rounded-lg p-3">
+                  <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">Hạn chót</div>
+                  <div className="flex items-center gap-1"><Calendar className="w-4 h-4 text-gray-500" /><span className="text-sm font-medium text-gray-900 dark:text-white">{format(new Date(detailTaskData.dueDate), 'dd/MM/yyyy')}</span></div>
+                </div>
+              </div>
+
+              {detailTaskData.subtasks && detailTaskData.subtasks.length > 0 && (
+                <div>
+                  <h4 className="text-sm font-semibold text-gray-900 dark:text-white mb-3 flex items-center gap-2">
+                    <ListChecks className="w-4 h-4 text-indigo-600" /> Các bước thực hiện
+                  </h4>
+                  <div className="space-y-2">
+                    {detailTaskData.subtasks.map(sub => (
+                      <div key={sub.id} className={`p-3 rounded-lg border ${sub.completed ? 'bg-green-50 dark:bg-green-900/10 border-green-200' : 'bg-gray-50 dark:bg-gray-900/30 border-gray-200 dark:border-gray-700'}`}>
+                        <div className="flex items-start gap-3">
+                          <button onClick={() => toggleSubtask(detailTaskData.id, sub.id)} className="mt-0.5">
+                            {sub.completed ? <CheckCircle2 className="w-5 h-5 text-green-500" /> : <Circle className="w-5 h-5 text-gray-400 hover:text-indigo-500" />}
+                          </button>
+                          <div className="flex-1">
+                            <span className={`text-sm font-medium ${sub.completed ? 'line-through text-gray-400' : 'text-gray-800 dark:text-gray-200'}`}>{sub.title}</span>
+                          </div>
+                          <button onClick={() => deleteSubtaskCtx(detailTaskData.id, sub.id)} className="p-1 hover:bg-red-100 rounded text-gray-400 hover:text-red-500"><Trash2 className="w-4 h-4" /></button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              
+              <div className="mt-4 p-3 bg-gray-50 dark:bg-gray-900/50 rounded-lg border dark:border-gray-700">
+                <div className="text-xs font-medium text-gray-700 dark:text-gray-300 mb-2">➕ Thêm bước mới</div>
+                <div className="flex gap-2">
+                  <input type="text" value={editingTask === detailTaskData.id ? newSubtask : ''}
+                    onFocus={() => setEditingTask(detailTaskData.id)}
+                    onChange={e => { setEditingTask(detailTaskData.id); setNewSubtask(e.target.value); }}
+                    onKeyDown={e => { if (e.key === 'Enter') addSubtaskToTask(detailTaskData.id); }}
+                    placeholder="Tên bước... (Enter để thêm)"
+                    className="flex-1 px-3 py-2 text-sm border dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white" />
+                  <button onClick={() => addSubtaskToTask(detailTaskData.id)} className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium">Thêm</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Thêm/Sửa */}
       {showModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white dark:bg-gray-800 rounded-2xl w-full max-w-xl max-h-[90vh] overflow-y-auto shadow-2xl animate-fadeIn">
