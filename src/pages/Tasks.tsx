@@ -31,10 +31,12 @@ export function Tasks() {
 
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
 
+  // ĐÃ NÂNG CẤP: Form quản lý Subtasks chi tiết
   const [form, setForm] = useState({ 
     title: '', description: '', priority: 'medium' as 'low' | 'medium' | 'high' | 'urgent', 
     dueDate: new Date().toISOString().split('T')[0], category: 'Công việc', 
-    status: 'todo' as 'todo' | 'in_progress' | 'review' | 'done', assignee: '', estimatedHours: 0, subtaskInputs: [''] 
+    status: 'todo' as 'todo' | 'in_progress' | 'review' | 'done', assignee: '', estimatedHours: 0, 
+    subtasks: [] as any[]
   });
 
   const categories = useMemo(() => Array.from(new Set(tasks.map(t => t.category || 'Khác'))), [tasks]);
@@ -81,18 +83,11 @@ export function Tasks() {
     updateRecord({ id: taskId, data: { subtasks, status: allDone ? 'done' : anyProg ? 'in_progress' : 'todo', completed: allDone, completedAt: allDone ? new Date().toISOString() : null } });
   };
 
-  const updateSubtask = (taskId: string, subtaskId: string, data: Partial<Subtask>) => {
-    const task = tasks.find(t => t.id === taskId);
-    if (!task) return;
-    const subtasks = task.subtasks?.map(s => s.id === subtaskId ? { ...s, ...data } : s) || [];
-    updateRecord({ id: taskId, data: { subtasks } });
-  };
-
   const addSubtaskToTask = (taskId: string) => {
     if (!newSubtask.trim()) return;
     const task = tasks.find(t => t.id === taskId);
     if (!task) return;
-    const newSub = { id: `s-${Date.now()}`, title: newSubtask, completed: false, status: 'todo' as const };
+    const newSub = { id: `s-${Date.now()}`, title: newSubtask, completed: false, status: 'todo' as const, priority: 'medium', dueDate: task.dueDate };
     updateRecord({ id: taskId, data: { subtasks: [...(task.subtasks || []), newSub] } });
     setNewSubtask('');
   };
@@ -106,7 +101,7 @@ export function Tasks() {
   const toggleExpand = (taskId: string) => setExpandedTasks(prev => { const next = new Set(prev); next.has(taskId) ? next.delete(taskId) : next.add(taskId); return next; });
 
   const closeModal = () => {
-    setForm({ title: '', description: '', priority: 'medium', dueDate: new Date().toISOString().split('T')[0], category: 'Công việc', status: 'todo', assignee: '', estimatedHours: 0, subtaskInputs: [''] });
+    setForm({ title: '', description: '', priority: 'medium', dueDate: new Date().toISOString().split('T')[0], category: 'Công việc', status: 'todo', assignee: '', estimatedHours: 0, subtasks: [] });
     setEditingTaskId(null);
     setShowModal(false);
   };
@@ -121,7 +116,7 @@ export function Tasks() {
       status: task.status || 'todo',
       assignee: task.assignee || '',
       estimatedHours: task.estimatedHours || 0,
-      subtaskInputs: ['']
+      subtasks: task.subtasks?.length ? task.subtasks.map(s => ({ ...s })) : []
     });
     setEditingTaskId(task.id);
     setShowModal(true);
@@ -129,39 +124,38 @@ export function Tasks() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const validSubtasks = form.subtaskInputs.filter(s => s.trim()).map((s, i) => ({ id: `s-${Date.now()}-${i}`, title: s, completed: false, status: 'todo' as const }));
+    const validSubtasks = form.subtasks.filter(s => s.title.trim()).map((s, i) => {
+      const existing = editingTaskId ? tasks.find(t => t.id === editingTaskId)?.subtasks?.find(sub => sub.id === s.id) : null;
+      return { 
+        id: s.id || `s-${Date.now()}-${i}`, 
+        title: s.title, 
+        completed: existing?.completed || false, 
+        status: existing?.status || 'todo',
+        priority: s.priority || 'medium',
+        dueDate: s.dueDate || form.dueDate,
+        startTime: s.startTime || undefined,
+        endTime: s.endTime || undefined
+      };
+    });
     
     const taskData = {
-      title: form.title, 
-      description: form.description, 
-      priority: form.priority, 
-      dueDate: form.dueDate,
-      category: form.category, 
-      status: form.status, 
-      assignee: form.assignee, 
-      estimatedHours: form.estimatedHours,
+      title: form.title, description: form.description, priority: form.priority, dueDate: form.dueDate,
+      category: form.category, status: form.status, assignee: form.assignee, estimatedHours: form.estimatedHours,
       completed: form.status === 'done',
     };
 
     if (editingTaskId) {
       const existingTask = tasks.find(t => t.id === editingTaskId);
-      const updatedSubtasks = existingTask?.subtasks ? [...existingTask.subtasks, ...validSubtasks] : validSubtasks;
       updateRecord({ 
         id: editingTaskId, 
         data: { 
           ...taskData, 
-          subtasks: updatedSubtasks,
+          subtasks: validSubtasks,
           completedAt: form.status === 'done' && existingTask?.status !== 'done' ? new Date().toISOString() : existingTask?.completedAt
         } 
       });
     } else {
-      addRecord({ 
-        ...taskData, 
-        createdAt: new Date().toISOString(), 
-        subtasks: validSubtasks, 
-        userId: user?.id,
-        completedAt: form.status === 'done' ? new Date().toISOString() : null
-      });
+      addRecord({ ...taskData, createdAt: new Date().toISOString(), subtasks: validSubtasks, userId: user?.id, completedAt: form.status === 'done' ? new Date().toISOString() : null });
     }
     closeModal();
   };
@@ -188,7 +182,7 @@ export function Tasks() {
             <button onClick={() => setViewMode('table')} className={`px-3 py-2 text-sm flex items-center gap-1 ${viewMode === 'table' ? 'bg-indigo-600 text-white' : 'dark:text-gray-300'}`}><Table2 className="w-4 h-4" /> Bảng</button>
             <button onClick={() => setViewMode('board')} className={`px-3 py-2 text-sm flex items-center gap-1 ${viewMode === 'board' ? 'bg-indigo-600 text-white' : 'dark:text-gray-300'}`}><LayoutGrid className="w-4 h-4" /> Board</button>
           </div>
-          <button onClick={() => { setEditingTaskId(null); setShowModal(true); }} className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg"><Plus className="w-5 h-5" /> Thêm việc</button>
+          <button onClick={() => { setEditingTaskId(null); setForm({...form, subtasks: []}); setShowModal(true); }} className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg"><Plus className="w-5 h-5" /> Thêm việc</button>
         </div>
       </div>
 
@@ -209,7 +203,7 @@ export function Tasks() {
         ))}
       </div>
 
-      {/* View Table KHÔI PHỤC SUBTASK VÀ MỞ RỘNG */}
+      {/* View Table */}
       {viewMode === 'table' && (
         <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border dark:border-gray-700 overflow-hidden overflow-x-auto">
           <table className="w-full min-w-[900px]">
@@ -249,7 +243,7 @@ export function Tasks() {
                       </td>
                     </tr>
                     
-                    {/* Render Subtasks */}
+                    {/* ĐÃ NÂNG CẤP: Render Subtasks hiển thị độ ưu tiên và thời gian */}
                     {isExpanded && subs.map(sub => (
                       <tr key={sub.id} className="bg-gray-50/70 dark:bg-gray-900/30 hover:bg-indigo-50/50 dark:hover:bg-indigo-900/10 transition-colors">
                         <td className="px-3 py-2 text-center border-r dark:border-gray-700"><div className="w-0.5 h-full bg-gray-300 dark:bg-gray-600 mx-auto"></div></td>
@@ -262,6 +256,8 @@ export function Tasks() {
                           <div className="flex items-center gap-2">
                             <div className="w-3 border-b-2 border-l-2 border-gray-300 dark:border-gray-600 h-3 rounded-bl -mt-2"></div>
                             <span className={`text-sm ${sub.completed ? 'line-through text-gray-400' : 'dark:text-gray-300'}`}>{sub.title}</span>
+                            {sub.priority && <span className={`ml-2 px-1.5 py-0.5 text-[10px] rounded-full ${priorityConfig[sub.priority].color}`}>{priorityConfig[sub.priority].label}</span>}
+                            {(sub.startTime || sub.endTime) && <span className="ml-2 text-[11px] text-gray-500 font-medium bg-white dark:bg-gray-800 px-1.5 py-0.5 rounded border dark:border-gray-600"><Clock className="w-3 h-3 inline mr-1 -mt-0.5"/>{sub.startTime || '00:00'} - {sub.endTime || '23:59'}</span>}
                           </div>
                         </td>
                         <td className="px-3 py-2 text-center">
@@ -321,7 +317,7 @@ export function Tasks() {
         </div>
       )}
 
-      {/* BẢNG CHI TIẾT CÔNG VIỆC TRƯỢT RA (DETAIL PANEL) KHÔI PHỤC HOÀN TOÀN */}
+      {/* BẢNG CHI TIẾT CÔNG VIỆC TRƯỢT RA (DETAIL PANEL) */}
       {detailTaskData && (
         <div className="fixed inset-0 bg-black/40 z-50 flex justify-end" onClick={() => setDetailTask(null)}>
           <div className="bg-white dark:bg-gray-800 w-full max-w-lg shadow-2xl overflow-y-auto animate-slideInRight" onClick={e => e.stopPropagation()}>
@@ -361,7 +357,17 @@ export function Tasks() {
                             {sub.completed ? <CheckCircle2 className="w-5 h-5 text-green-500" /> : <Circle className="w-5 h-5 text-gray-400 hover:text-indigo-500" />}
                           </button>
                           <div className="flex-1">
-                            <span className={`text-sm font-medium ${sub.completed ? 'line-through text-gray-400' : 'text-gray-800 dark:text-gray-200'}`}>{sub.title}</span>
+                            <div className="flex items-center gap-2">
+                               <span className={`text-sm font-medium ${sub.completed ? 'line-through text-gray-400' : 'text-gray-800 dark:text-gray-200'}`}>{sub.title}</span>
+                               {sub.priority && <span className={`px-1.5 py-0.5 text-[10px] rounded-full ${priorityConfig[sub.priority].color}`}>{priorityConfig[sub.priority].label}</span>}
+                            </div>
+                            {(sub.startTime || sub.endTime) && (
+                               <div className="text-xs text-gray-500 mt-1.5 font-medium flex items-center gap-1">
+                                  <Clock className="w-3 h-3" />
+                                  {sub.dueDate ? format(new Date(sub.dueDate), 'dd/MM/yyyy') : ''} 
+                                  {(sub.startTime || sub.endTime) ? ` • ${sub.startTime || '00:00'} - ${sub.endTime || '23:59'}` : ''}
+                               </div>
+                            )}
                           </div>
                           <button onClick={() => deleteSubtaskCtx(detailTaskData.id, sub.id)} className="p-1 hover:bg-red-100 rounded text-gray-400 hover:text-red-500"><Trash2 className="w-4 h-4" /></button>
                         </div>
@@ -372,14 +378,14 @@ export function Tasks() {
               )}
               
               <div className="mt-4 p-3 bg-gray-50 dark:bg-gray-900/50 rounded-lg border dark:border-gray-700">
-                <div className="text-xs font-medium text-gray-700 dark:text-gray-300 mb-2">➕ Thêm bước mới</div>
+                <div className="text-xs font-medium text-gray-700 dark:text-gray-300 mb-2">➕ Thêm bước mới nhanh</div>
                 <div className="flex gap-2">
                   <input type="text" value={editingTask === detailTaskData.id ? newSubtask : ''}
                     onFocus={() => setEditingTask(detailTaskData.id)}
                     onChange={e => { setEditingTask(detailTaskData.id); setNewSubtask(e.target.value); }}
                     onKeyDown={e => { if (e.key === 'Enter') addSubtaskToTask(detailTaskData.id); }}
                     placeholder="Tên bước... (Enter để thêm)"
-                    className="flex-1 px-3 py-2 text-sm border dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white" />
+                    className="flex-1 px-3 py-2 text-sm border dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white focus:ring-2 focus:ring-indigo-500" />
                   <button onClick={() => addSubtaskToTask(detailTaskData.id)} className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium">Thêm</button>
                 </div>
               </div>
@@ -388,26 +394,26 @@ export function Tasks() {
         </div>
       )}
 
-      {/* Modal Thêm/Sửa */}
+      {/* ĐÃ NÂNG CẤP: Modal Thêm/Sửa CÔNG VIỆC CHÍNH & SUBTASK */}
       {showModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white dark:bg-gray-800 rounded-2xl w-full max-w-xl max-h-[90vh] overflow-y-auto shadow-2xl animate-fadeIn">
-            <div className="sticky top-0 bg-white dark:bg-gray-800 p-4 border-b dark:border-gray-700 flex justify-between z-10">
+          <div className="bg-white dark:bg-gray-800 rounded-2xl w-full max-w-xl max-h-[90vh] overflow-y-auto shadow-2xl animate-fadeIn custom-scrollbar">
+            <div className="sticky top-0 bg-white dark:bg-gray-800 p-4 border-b dark:border-gray-700 flex justify-between z-10 rounded-t-2xl">
               <h2 className="text-lg font-bold dark:text-white flex items-center gap-2">
                 {editingTaskId ? <><Edit2 className="w-5 h-5 text-indigo-600"/> Sửa công việc</> : <><Plus className="w-5 h-5 text-indigo-600"/> Thêm công việc</>}
               </h2>
               <button onClick={closeModal} className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg"><X className="w-5 h-5 text-gray-500" /></button>
             </div>
             
-            <form onSubmit={handleSubmit} className="p-5 space-y-4">
+            <form onSubmit={handleSubmit} className="p-5 space-y-5">
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Tiêu đề *</label>
-                <input type="text" value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} className="w-full px-3 py-2.5 border dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white focus:ring-2 focus:ring-indigo-500" required placeholder="Nhập tiêu đề công việc..." />
+                <input type="text" value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} className="w-full px-3 py-2.5 border dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white focus:ring-2 focus:ring-indigo-500 bg-gray-50 dark:bg-gray-800" required placeholder="Nhập tiêu đề công việc..." />
               </div>
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Mô tả chi tiết</label>
-                <textarea value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} className="w-full px-3 py-2.5 border dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white resize-none focus:ring-2 focus:ring-indigo-500" rows={3} placeholder="Mô tả thêm về công việc này..." />
+                <textarea value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} className="w-full px-3 py-2.5 border dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white resize-none focus:ring-2 focus:ring-indigo-500 bg-gray-50 dark:bg-gray-800" rows={2} placeholder="Mô tả thêm về công việc này..." />
               </div>
 
               <div className="grid grid-cols-2 gap-4">
@@ -433,10 +439,10 @@ export function Tasks() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Mức ưu tiên</label>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Mức ưu tiên</label>
                 <div className="grid grid-cols-4 gap-2">
                   {(Object.keys(priorityConfig) as Array<keyof typeof priorityConfig>).map(p => (
-                    <button key={p} type="button" onClick={() => setForm({ ...form, priority: p })} className={`py-2 rounded-lg text-xs font-medium transition-all flex flex-col items-center gap-1 border ${form.priority === p ? priorityConfig[p].color + ' border-transparent ring-2 ring-indigo-500 shadow-sm' : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-400 border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700'}`}>
+                    <button key={p} type="button" onClick={() => setForm({ ...form, priority: p })} className={`py-2 rounded-lg text-xs font-medium transition-all flex flex-col items-center gap-1 border ${form.priority === p ? priorityConfig[p].color + ' border-transparent ring-2 ring-indigo-500 shadow-sm scale-105' : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-400 border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700'}`}>
                       <span className={`w-2 h-2 rounded-full ${priorityConfig[p].dot}`}></span>
                       {priorityConfig[p].label}
                     </button>
@@ -446,46 +452,75 @@ export function Tasks() {
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Hạn chót *</label>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Hạn chót công việc *</label>
                   <input type="date" value={form.dueDate} onChange={e => setForm({ ...form, dueDate: e.target.value })} className="w-full px-3 py-2.5 border dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white focus:ring-2 focus:ring-indigo-500" required />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Thời gian ước tính (giờ)</label>
-                  <input type="number" min="0" step="0.5" value={form.estimatedHours || ''} onChange={e => setForm({ ...form, estimatedHours: Number(e.target.value) })} className="w-full px-3 py-2.5 border dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white focus:ring-2 focus:ring-indigo-500" placeholder="VD: 2.5" />
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Người thực hiện</label>
+                  <input type="text" value={form.assignee} onChange={e => setForm({ ...form, assignee: e.target.value })} className="w-full px-3 py-2.5 border dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white focus:ring-2 focus:ring-indigo-500" placeholder="VD: Tôi, Anh A..." />
                 </div>
               </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Người thực hiện</label>
-                <input type="text" value={form.assignee} onChange={e => setForm({ ...form, assignee: e.target.value })} className="w-full px-3 py-2.5 border dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white focus:ring-2 focus:ring-indigo-500" placeholder="VD: Tôi, Anh A..." />
-              </div>
+              {/* ĐÃ NÂNG CẤP: Setup Thời gian và Ưu tiên cho SUBTASK */}
+              <div className="pt-2 border-t dark:border-gray-700">
+                <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-3 flex items-center gap-2"><ListChecks className="w-4 h-4 text-indigo-600"/> Các bước thực hiện (Subtasks)</label>
+                <div className="space-y-3">
+                  {form.subtasks.map((sub, idx) => (
+                    <div key={idx} className="flex flex-col gap-2 p-3 bg-gray-50 dark:bg-gray-900/30 border border-gray-200 dark:border-gray-700 rounded-xl transition-all hover:border-indigo-300 dark:hover:border-indigo-500/50 relative group">
+                      <button type="button" onClick={() => {
+                          const newSubs = form.subtasks.filter((_, i) => i !== idx);
+                          setForm({ ...form, subtasks: newSubs });
+                        }} className="absolute -top-2 -right-2 p-1 bg-red-100 text-red-600 rounded-full opacity-0 group-hover:opacity-100 transition-opacity shadow-sm"><X className="w-3 h-3" />
+                      </button>
+                      
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-bold text-gray-400 w-5 text-center">{idx + 1}.</span>
+                        <input type="text" value={sub.title} onChange={e => {
+                          const newSubs = [...form.subtasks];
+                          newSubs[idx].title = e.target.value;
+                          setForm({ ...form, subtasks: newSubs });
+                        }} className="flex-1 px-3 py-2 text-sm border dark:border-gray-600 rounded-lg dark:bg-gray-800 dark:text-white focus:ring-2 focus:ring-indigo-500" placeholder="Tên bước thực hiện..." />
+                      </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Thêm các bước nhỏ (Subtasks)</label>
-                <div className="space-y-2">
-                  {form.subtaskInputs.map((sub, idx) => (
-                    <div key={idx} className="flex items-center gap-2">
-                      <span className="text-xs text-gray-400 w-5 text-center">{idx + 1}.</span>
-                      <input type="text" value={sub} onChange={e => {
-                        const newSubs = [...form.subtaskInputs];
-                        newSubs[idx] = e.target.value;
-                        setForm({ ...form, subtaskInputs: newSubs });
-                      }} className="flex-1 px-3 py-2 text-sm border dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white focus:ring-2 focus:ring-indigo-500" placeholder={`Nhập nội dung bước ${idx + 1}...`} />
-                      {form.subtaskInputs.length > 1 && (
-                        <button type="button" onClick={() => {
-                          const newSubs = form.subtaskInputs.filter((_, i) => i !== idx);
-                          setForm({ ...form, subtaskInputs: newSubs });
-                        }} className="p-2 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg transition-colors"><X className="w-4 h-4 text-red-500" /></button>
-                      )}
+                      <div className="flex flex-wrap items-center gap-2 pl-7">
+                        <select value={sub.priority || 'medium'} onChange={e => {
+                          const newSubs = [...form.subtasks];
+                          newSubs[idx].priority = e.target.value as any;
+                          setForm({ ...form, subtasks: newSubs });
+                        }} className="px-2 py-1.5 text-xs font-medium border dark:border-gray-600 rounded-lg dark:bg-gray-800 dark:text-white focus:ring-2 focus:ring-indigo-500 cursor-pointer">
+                          <option value="low">🔵 Ưu tiên Thấp</option>
+                          <option value="medium">🟡 Ưu tiên TB</option>
+                          <option value="high">🟠 Ưu tiên Cao</option>
+                          <option value="urgent">🔴 Khẩn cấp</option>
+                        </select>
+                        <input type="date" value={sub.dueDate || form.dueDate} onChange={e => {
+                          const newSubs = [...form.subtasks];
+                          newSubs[idx].dueDate = e.target.value;
+                          setForm({ ...form, subtasks: newSubs });
+                        }} className="px-2 py-1.5 text-xs font-medium border dark:border-gray-600 rounded-lg dark:bg-gray-800 dark:text-white focus:ring-2 focus:ring-indigo-500" title="Ngày thực hiện" />
+                        <div className="flex items-center gap-1 bg-white dark:bg-gray-800 border dark:border-gray-600 rounded-lg px-1 focus-within:ring-2 focus-within:ring-indigo-500 overflow-hidden">
+                          <input type="time" value={sub.startTime || ''} onChange={e => {
+                            const newSubs = [...form.subtasks];
+                            newSubs[idx].startTime = e.target.value;
+                            setForm({ ...form, subtasks: newSubs });
+                          }} className="px-1 py-1.5 text-xs font-medium bg-transparent border-0 dark:text-white outline-none" title="Giờ bắt đầu" />
+                          <span className="text-gray-400 font-bold">-</span>
+                          <input type="time" value={sub.endTime || ''} onChange={e => {
+                            const newSubs = [...form.subtasks];
+                            newSubs[idx].endTime = e.target.value;
+                            setForm({ ...form, subtasks: newSubs });
+                          }} className="px-1 py-1.5 text-xs font-medium bg-transparent border-0 dark:text-white outline-none" title="Giờ kết thúc" />
+                        </div>
+                      </div>
                     </div>
                   ))}
-                  <button type="button" onClick={() => setForm({ ...form, subtaskInputs: [...form.subtaskInputs, ''] })} className="text-sm text-indigo-600 dark:text-indigo-400 font-medium hover:text-indigo-700 flex items-center gap-1 mt-2 p-1">
+                  <button type="button" onClick={() => setForm({ ...form, subtasks: [...form.subtasks, { id: '', title: '', priority: 'medium', dueDate: form.dueDate, startTime: '', endTime: '' }] })} className="text-sm text-indigo-600 dark:text-indigo-400 font-medium hover:text-indigo-700 flex items-center gap-1 mt-2 p-2 bg-indigo-50 dark:bg-indigo-900/20 rounded-lg transition-colors w-fit">
                     <Plus className="w-4 h-4" /> Thêm một bước nữa
                   </button>
                 </div>
               </div>
 
-              <div className="pt-4 border-t dark:border-gray-700 flex gap-3">
+              <div className="pt-4 mt-4 border-t dark:border-gray-700 flex gap-3 sticky bottom-0 bg-white dark:bg-gray-800 py-2">
                 <button type="button" onClick={closeModal} className="flex-1 py-3 border dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-xl font-bold hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">Hủy</button>
                 <button type="submit" className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white py-3 rounded-xl font-bold transition-colors shadow-md">{editingTaskId ? 'Cập nhật công việc' : 'Tạo công việc mới'}</button>
               </div>
