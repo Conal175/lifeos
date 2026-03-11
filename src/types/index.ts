@@ -97,6 +97,9 @@ export interface Subtask {
   status: 'todo' | 'in_progress' | 'done';
   assignee?: string;
   dueDate?: string;
+  startTime?: string; // Bổ sung giờ bắt đầu
+  endTime?: string;   // Bổ sung giờ kết thúc
+  priority?: 'low' | 'medium' | 'high' | 'urgent'; // Bổ sung mức độ ưu tiên
   estimatedHours?: number;
   actualHours?: number;
   note?: string;
