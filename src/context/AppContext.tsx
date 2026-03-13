@@ -25,6 +25,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [theme, setTheme] = useState<'light' | 'dark'>('light');
   const [language, setLanguageState] = useState<'vi' | 'en' | 'zh'>('vi');
+  
+  // Dùng useRef để chống gọi API nhiều lần lặp lại
   const fetchedUserId = useRef<string | null>(null);
 
   useEffect(() => {
@@ -32,7 +34,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
     // Hàm chuyên dụng tải Profile người dùng
     const loadProfile = async (sessionUser: SupabaseUser) => {
-      if (fetchedUserId.current === sessionUser.id) return;
+      // Nếu đã tải dữ liệu của user này rồi thì bỏ qua để chống chớp giật màn hình
+      if (fetchedUserId.current === sessionUser.id) {
+         if (isLoading && isMounted) setIsLoading(false);
+         return;
+      }
+      
       setIsLoading(true);
       fetchedUserId.current = sessionUser.id;
 
@@ -58,24 +65,35 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }
     };
 
-    // 1. TẢI TRỰC TIẾP KHÔNG CHỜ ĐỢI (Loại bỏ hoàn toàn setTimeout 5 giây)
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    // 1. TẢI SESSION TRỰC TIẾP LÚC MỞ WEB
+    supabase.auth.getSession().then(({ data: { session }, error }) => {
+      if (error) {
+        console.error("Lỗi session:", error);
+        if (isMounted) setIsLoading(false);
+        return;
+      }
       if (session?.user) {
         loadProfile(session.user);
       } else {
-        if (isMounted) setIsLoading(false); // Nếu chưa đăng nhập, mở khóa màn hình ngay
+        if (isMounted) setIsLoading(false);
       }
     });
 
-    // 2. LẮNG NGHE THAY ĐỔI THEO THỜI GIAN THỰC
+    // 2. LẮNG NGHE SỰ KIỆN (ĐÃ VÁ LỖI TỰ ĐỘNG VĂNG RA NGOÀI)
     const { data: { subscription } } = onAuthStateChange((event, session) => {
-      if (session?.user) {
-        loadProfile(session.user);
-      } else {
+      console.log('🔄 Trạng thái Auth:', event); // Hỗ trợ debug trong Console
+
+      if (event === 'SIGNED_OUT') {
+        // CHỈ ĐĂNG XUẤT KHI CÓ LỆNH SIGNED_OUT CHÍNH THỨC TỪ SUPABASE
         if (isMounted) {
           setUser(null);
           fetchedUserId.current = null;
           setIsLoading(false);
+        }
+      } else if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'INITIAL_SESSION') {
+        // Cập nhật lại user nếu session tồn tại (bỏ qua các sự kiện nhiễu)
+        if (session?.user) {
+          loadProfile(session.user);
         }
       }
     });
@@ -88,9 +106,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => { document.documentElement.classList.toggle('dark', theme === 'dark'); }, [theme]);
 
-  const logout = async () => { await supabaseSignOut(); };
+  // ĐÃ VÁ LỖI: Hàm logout cần reset state thủ công để đảm bảo an toàn
+  const logout = async () => { 
+    await supabaseSignOut(); 
+    setUser(null);
+    fetchedUserId.current = null;
+  };
+  
   const toggleTheme = () => { const newTheme = theme === 'light' ? 'dark' : 'light'; setTheme(newTheme); if (user) updateUser({ settings: { ...user.settings, theme: newTheme } }); };
   const setLanguage = (lang: 'vi' | 'en' | 'zh') => { setLanguageState(lang); if (user) updateUser({ settings: { ...user.settings, language: lang } }); };
+  
   const updateUser = (userData: Partial<User>) => {
     if (user) {
       const updated = deepMergeUser(user, userData); setUser(updated);
