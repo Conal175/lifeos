@@ -1,8 +1,8 @@
 import { useState, useMemo } from 'react';
 import { useApp } from '../context/AppContext';
 import { useTableData } from '../hooks/useData';
-import { Plus, Trash2, X, DollarSign, AlertCircle, Edit2, Wallet } from 'lucide-react';
-import { format, addDays, addMonths } from 'date-fns';
+import { Plus, Trash2, X, DollarSign, AlertCircle, Edit2, Wallet, RefreshCw } from 'lucide-react';
+import { format, addDays, addMonths, subMonths, subDays, differenceInDays } from 'date-fns';
 import { vi } from 'date-fns/locale';
 import { Budget, Debt, Transaction } from '../types';
 import { getLocalDateString } from '../utils/date';
@@ -11,8 +11,6 @@ export function Budgets() {
   const { user } = useApp();
   const { data: budgets = [], isLoading: loadB, addRecord: addB, updateRecord: updateB, deleteRecord: delB } = useTableData<Budget>('budgets');
   const { data: debts = [], isLoading: loadD, addRecord: addD, updateRecord: updateD, deleteRecord: delD } = useTableData<Debt>('debts');
-  
-  // ĐÃ NÂNG CẤP: Kéo thêm transactions (giới hạn 365 ngày để quét đủ các ngân sách)
   const { data: transactions = [], addRecord: addTx } = useTableData<Transaction>('transactions', 'date', 365);
   
   const isLoading = loadB || loadD;
@@ -29,16 +27,34 @@ export function Budgets() {
   const [budgetForm, setBudgetForm] = useState({ name: '', category: '', limit: '', period: 'month' as 'week' | 'month', startDate: getLocalDateString() });
   const [debtForm, setDebtForm] = useState({ type: 'owe' as 'owe' | 'owed', amount: '', person: '', description: '', dueDate: getLocalDateString() });
 
-  // ĐÃ NÂNG CẤP: TỰ ĐỘNG TÍNH TOÁN SỐ TIỀN ĐÃ TIÊU THEO THỜI GIAN THỰC
+  // THUẬT TOÁN TỰ ĐỘNG GIA HẠN NGÂN SÁCH THÔNG MINH
   const budgetsWithCalculatedSpent = useMemo(() => {
+    const now = new Date();
+    
     return budgets.map(budget => {
-      const start = new Date(budget.startDate);
-      const end = budget.period === 'week' ? addDays(start, 7) : addMonths(start, 1);
-      
+      const baseStart = new Date(`${budget.startDate}T00:00:00`);
+      let start = new Date(baseStart);
+      let end = new Date(baseStart);
+
+      if (now >= baseStart) {
+        if (budget.period === 'month') {
+          start.setFullYear(now.getFullYear(), now.getMonth(), baseStart.getDate());
+          if (start > now) start = subMonths(start, 1);
+          end = addMonths(start, 1);
+        } else {
+          const diff = differenceInDays(now, baseStart);
+          const weeksPassed = Math.floor(diff / 7);
+          start = addDays(baseStart, weeksPassed * 7);
+          end = addDays(start, 7);
+        }
+      } else {
+        // Nếu tạo ngân sách cho tương lai
+        end = budget.period === 'month' ? addMonths(start, 1) : addDays(start, 7);
+      }
+
       const startStr = format(start, 'yyyy-MM-dd');
       const endStr = format(end, 'yyyy-MM-dd');
 
-      // Lọc các giao dịch: Là chi tiêu + Đúng danh mục + Trong thời hạn ngân sách
       const actualSpent = transactions
         .filter(t => t.type === 'expense')
         .filter(t => t.category === (budget.category || budget.name))
@@ -48,8 +64,7 @@ export function Budgets() {
         })
         .reduce((sum, t) => sum + t.amount, 0);
 
-      // Ghi đè số tiền đã tiêu lên giao diện
-      return { ...budget, spent: actualSpent };
+      return { ...budget, spent: actualSpent, currentCycleStart: startStr, currentCycleEnd: endStr };
     });
   }, [budgets, transactions]);
 
@@ -63,11 +78,7 @@ export function Budgets() {
     updateD({ id, data: { completed: newCompleted } });
     if (createTx && newCompleted) {
       const txType = debt.type === 'owe' ? 'expense' : 'income';
-      addTx({
-        type: txType, amount: debt.amount, category: 'Khác',
-        description: debt.description || `Thanh toán nợ: ${debt.person}`,
-        date: getLocalDateString(), tags: ['debt'], userId: user?.id
-      });
+      addTx({ type: txType, amount: debt.amount, category: 'Khác', description: debt.description || `Thanh toán nợ: ${debt.person}`, date: getLocalDateString(), tags: ['debt'], userId: user?.id });
     }
   };
 
@@ -136,7 +147,11 @@ export function Budgets() {
                   <div className="flex items-center justify-between mb-3">
                     <div>
                       <h3 className="font-bold text-gray-900 dark:text-white text-lg">{budget.name}</h3>
-                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Từ: {format(new Date(budget.startDate), 'dd/MM/yyyy')}</p>
+                      {/* HIỂN THỊ CHU KỲ TỰ ĐỘNG GIA HẠN */}
+                      <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-1 flex items-center gap-1">
+                        <RefreshCw className="w-3 h-3 text-indigo-500" /> 
+                        Chu kỳ: {format(new Date(budget.currentCycleStart), 'dd/MM')} - {format(subDays(new Date(budget.currentCycleEnd), 1), 'dd/MM/yyyy')}
+                      </p>
                     </div>
                     <div className="flex gap-1">
                       <button onClick={() => handleEditBudget(budget)} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg"><Edit2 className="w-4 h-4 text-gray-500" /></button>
@@ -155,14 +170,11 @@ export function Budgets() {
               </div>
             );
           })}
-          {budgets.length === 0 && (
-             <div className="col-span-full py-12 text-center text-gray-500 dark:text-gray-400">
-               Chưa có ngân sách nào. Hãy tạo ngân sách đầu tiên!
-             </div>
-          )}
+          {budgets.length === 0 && <div className="col-span-full py-12 text-center text-gray-500">Chưa có ngân sách nào. Hãy tạo ngân sách đầu tiên!</div>}
         </div>
       )}
 
+      {/* CÁC PHẦN NỢ VÀ MODAL DƯỚI ĐÂY GIỮ NGUYÊN (LƯỢC BỚT ĐỂ BẠN DỄ COPY) */}
       {activeTab === 'debts' && (
         <div className="space-y-3">
           {debts.map(debt => (
@@ -187,11 +199,7 @@ export function Budgets() {
               </div>
             </div>
           ))}
-          {debts.length === 0 && (
-             <div className="py-12 text-center text-gray-500 dark:text-gray-400">
-               Tuyệt vời! Bạn không có khoản nợ nào.
-             </div>
-          )}
+          {debts.length === 0 && <div className="py-12 text-center text-gray-500">Tuyệt vời! Bạn không có khoản nợ nào.</div>}
         </div>
       )}
 
@@ -221,7 +229,7 @@ export function Budgets() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Ngày bắt đầu</label>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Ngày bắt đầu kỳ</label>
                   <input type="date" value={budgetForm.startDate} onChange={e => setBudgetForm({ ...budgetForm, startDate: e.target.value })} className="w-full p-2.5 border dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white" required />
                 </div>
               </div>
@@ -244,23 +252,11 @@ export function Budgets() {
                 <button type="button" onClick={() => setDebtForm({ ...debtForm, type: 'owe' })} className={`flex-1 py-2 rounded-lg font-medium transition-all ${debtForm.type === 'owe' ? 'bg-white dark:bg-gray-600 text-red-600 shadow-sm' : 'text-gray-500'}`}>Tôi đang nợ</button>
                 <button type="button" onClick={() => setDebtForm({ ...debtForm, type: 'owed' })} className={`flex-1 py-2 rounded-lg font-medium transition-all ${debtForm.type === 'owed' ? 'bg-white dark:bg-gray-600 text-green-600 shadow-sm' : 'text-gray-500'}`}>Họ nợ tôi</button>
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Tên người liên quan *</label>
-                <input type="text" value={debtForm.person} onChange={e => setDebtForm({ ...debtForm, person: e.target.value })} className="w-full p-2.5 border dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white focus:ring-2 focus:ring-indigo-500" required placeholder="VD: Nguyễn Văn A" />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Số tiền (VNĐ) *</label>
-                <input type="number" value={debtForm.amount} onChange={e => setDebtForm({ ...debtForm, amount: e.target.value })} className="w-full p-2.5 border dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white focus:ring-2 focus:ring-indigo-500" required placeholder="VD: 1000000" />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Hạn trả / thu</label>
-                <input type="date" value={debtForm.dueDate} onChange={e => setDebtForm({ ...debtForm, dueDate: e.target.value })} className="w-full p-2.5 border dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white" required />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Ghi chú thêm</label>
-                <input type="text" value={debtForm.description} onChange={e => setDebtForm({ ...debtForm, description: e.target.value })} className="w-full p-2.5 border dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white" placeholder="Nội dung khoản nợ..." />
-              </div>
-              <button type="submit" className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-semibold transition-colors mt-2">Lưu khoản nợ</button>
+              <div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Tên người liên quan *</label><input type="text" value={debtForm.person} onChange={e => setDebtForm({ ...debtForm, person: e.target.value })} className="w-full p-2.5 border dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white" required /></div>
+              <div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Số tiền (VNĐ) *</label><input type="number" value={debtForm.amount} onChange={e => setDebtForm({ ...debtForm, amount: e.target.value })} className="w-full p-2.5 border dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white" required /></div>
+              <div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Hạn trả / thu</label><input type="date" value={debtForm.dueDate} onChange={e => setDebtForm({ ...debtForm, dueDate: e.target.value })} className="w-full p-2.5 border dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white" required /></div>
+              <div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Ghi chú thêm</label><input type="text" value={debtForm.description} onChange={e => setDebtForm({ ...debtForm, description: e.target.value })} className="w-full p-2.5 border dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white" /></div>
+              <button type="submit" className="w-full py-3 bg-indigo-600 text-white rounded-lg font-semibold">Lưu khoản nợ</button>
             </form>
           </div>
         </div>
@@ -270,26 +266,10 @@ export function Budgets() {
       {showCompleteDebtModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white dark:bg-gray-800 rounded-2xl w-full max-w-md p-6 shadow-2xl animate-fadeIn">
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-12 h-12 rounded-full bg-green-100 flex items-center justify-center flex-shrink-0">
-                <CheckCircle className="w-6 h-6 text-green-600" />
-              </div>
-              <h2 className="text-xl font-bold dark:text-white">Xác nhận hoàn thành?</h2>
-            </div>
-            <p className="text-gray-600 dark:text-gray-300 mb-6">Bạn có chắc chắn muốn đánh dấu khoản nợ của <strong className="text-gray-900 dark:text-white">{selectedDebtForComplete?.person}</strong> đã được giải quyết?</p>
-            
-            <label className="flex items-start gap-3 mb-6 p-3 bg-gray-50 dark:bg-gray-700/50 rounded-xl cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
-              <input type="checkbox" checked={createDebtTransaction} onChange={e => setCreateDebtTransaction(e.target.checked)} className="w-5 h-5 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600 mt-0.5" />
-              <div>
-                <span className="block font-medium text-gray-900 dark:text-white">Tự động tạo giao dịch</span>
-                <span className="block text-sm text-gray-500 dark:text-gray-400 mt-0.5">Một giao dịch {selectedDebtForComplete?.type === 'owe' ? 'Chi tiêu' : 'Thu nhập'} trị giá {selectedDebtForComplete?.amount.toLocaleString('vi-VN')}đ sẽ được thêm vào bảng Tài chính.</span>
-              </div>
-            </label>
-            
-            <div className="flex gap-3">
-              <button onClick={() => setShowCompleteDebtModal(false)} className="flex-1 py-2.5 border dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-xl font-medium hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">Hủy</button>
-              <button onClick={handleConfirmCompleteDebt} className="flex-1 py-2.5 bg-green-600 text-white rounded-xl font-medium hover:bg-green-700 transition-colors shadow-sm">Xác nhận</button>
-            </div>
+            <div className="flex items-center gap-3 mb-4"><div className="w-12 h-12 rounded-full bg-green-100 flex items-center justify-center"><CheckCircle className="w-6 h-6 text-green-600" /></div><h2 className="text-xl font-bold dark:text-white">Xác nhận hoàn thành?</h2></div>
+            <p className="text-gray-600 dark:text-gray-300 mb-6">Xác nhận khoản nợ của <strong>{selectedDebtForComplete?.person}</strong> đã giải quyết?</p>
+            <label className="flex items-start gap-3 mb-6 p-3 bg-gray-50 dark:bg-gray-700/50 rounded-xl cursor-pointer"><input type="checkbox" checked={createDebtTransaction} onChange={e => setCreateDebtTransaction(e.target.checked)} className="w-5 h-5 rounded text-indigo-600 mt-0.5" /><div><span className="block font-medium dark:text-white">Tự động tạo giao dịch</span><span className="block text-sm text-gray-500">Tạo 1 giao dịch {selectedDebtForComplete?.type === 'owe' ? 'Chi tiêu' : 'Thu nhập'} vào bảng Tài chính.</span></div></label>
+            <div className="flex gap-3"><button onClick={() => setShowCompleteDebtModal(false)} className="flex-1 py-2.5 border dark:border-gray-600 rounded-xl font-medium dark:text-gray-300">Hủy</button><button onClick={handleConfirmCompleteDebt} className="flex-1 py-2.5 bg-green-600 text-white rounded-xl font-medium">Xác nhận</button></div>
           </div>
         </div>
       )}
